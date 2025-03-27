@@ -17,7 +17,7 @@
 
 ## 📋 Overview
 
-This tool helps engineers quickly find which stencils contain specific shapes and their physical storage locations, without requiring Visio installation to operate.
+This tool helps engineers quickly find which stencils contain specific shapes and their physical storage locations, without requiring Visio installation to operate. It also includes a utility for finding and removing problematic Visio temporary files.
 
 ![Screenshot](docs/images/ui_screenshot_2025-03-27.png)
 
@@ -27,6 +27,14 @@ This tool helps engineers quickly find which stencils contain specific shapes an
 - 🔎 **Real-time Shape Search** - Instantly search across thousands of shapes
 - 🔄 **Zero Visio Dependencies** - Works without Visio installation
 - 📊 **Clear Results Display** - Shows shape name, stencil name, and file path
+- 👁️ **Shape Preview** - Visualize shapes directly in the application
+- 🧹 **Temp File Cleaner** - Find and remove corrupted Visio temporary files that cause errors
+- 🧪 **Advanced Stencil Health Monitor** - Analyze stencils for issues with data visualization
+  - Identify empty stencils
+  - Detect duplicate shapes
+  - Find multiple versions of the same stencil
+  - Flag unusually large stencils
+  - Identify potentially corrupt files
 
 ## 💻 Installation
 
@@ -99,6 +107,24 @@ The application will open in your default web browser at `http://localhost:8501`
 2. Click "🔄 Update Database" to scan for stencils
 3. Enter a search term in the search box
 4. Browse results showing shapes, their parent stencils, and file locations
+5. Click the "👁️ Preview" button to see a visual representation of any shape
+
+### Clean Temporary Files
+
+1. Navigate to the "Temp File Cleaner" page using the sidebar
+2. Enter the directory to scan (e.g., network shares or local folders)
+3. Click "Scan for Temp Files"
+4. Review the list of found temporary files
+5. Select files to delete and click the delete button
+
+### Analyze Stencil Health
+
+1. Navigate to the "Stencil Health" page using the sidebar
+2. Enter the stencil directory path
+3. Click "Analyze Health" to scan for issues
+4. Review the visualized health data and issue details
+5. Filter issues by severity and type
+6. Export reports in CSV or Excel format
 
 <details>
 <summary><b>🌐 Sharing with Others on Your Network</b></summary>
@@ -140,6 +166,7 @@ To make the application accessible to others on your local network:
 streamlit-stencil-search/
 ├── app/                  # Application code
 │   ├── pages/            # Additional Streamlit pages
+│   │   └── 01_Temp_File_Cleaner.py  # Temp file cleaner tool
 │   ├── core/             # Business logic
 │   └── Home.py           # Main application entry point
 ├── data/                 # Cached stencil data

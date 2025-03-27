@@ -1,0 +1,47 @@
+# Visio Stencil Explorer Configuration
+
+# Application Settings
+app:
+  title: "Visio Stencil Explorer"
+  description: "A tool to catalog and search Visio stencil files"
+  version: "1.0.0"
+  debug: false
+
+# Default Paths
+paths:
+  # Default stencil directory to scan
+  stencil_directory: "./test_data"
+  # Where to store the SQLite database
+  database: "data/stencil_cache.db"
+  # Where to store exported reports
+  exports: "exports"
+
+# Scanning Settings
+scanner:
+  # File extensions to scan
+  extensions:
+    - ".vss"
+    - ".vssx"
+    - ".vssm"
+    - ".vst"
+    - ".vstx"
+  # Auto-refresh interval in hours (0 = disabled)
+  auto_refresh_interval: 1
+  # Maximum number of stencils to process in a batch
+  batch_size: 100
+
+# Temp File Cleaner Settings
+temp_cleaner:
+  # File patterns to look for
+  patterns:
+    - "~$$*.*vssx"
+  # Default scan directory
+  default_directory: "~/Documents"
+
+# Stencil Health Settings
+health:
+  # Severity thresholds (number of issues to trigger severity)
+  thresholds:
+    low: 1
+    medium: 5
+    high: 10 
