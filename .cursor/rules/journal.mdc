@@ -1,0 +1,103 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Visio Stencil Search Project Journal
+
+## Project Overview
+This journal documents important insights, patterns, and project-specific knowledge for the Visio Stencil Search application. The application is designed to help users search through Microsoft Visio stencil files without requiring Visio to be installed.
+
+## Key Project Patterns
+
+### Architecture Patterns
+- The application follows a clean separation between business logic (in `app/core/`) and presentation (in `pages/`)
+- Streamlit is used as the primary UI framework, with a multi-page structure
+- Data persistence is handled through SQLite and files stored in the `data/` directory
+- The application follows a modular design with clear component boundaries
+- Core scanning and parsing logic is isolated from UI rendering code
+
+### Development Workflow
+- The codebase is organized in a modular fashion with clear component boundaries
+- Python modules in `app/core/` implement the core functionality
+- Streamlit pages in `pages/` implement the user interface
+- Configuration is centralized in `config.yaml` for easier maintenance
+- Error handling is implemented at appropriate abstraction levels
+
+### Streamlit Patterns
+- Each page has its own file in the `pages/` directory with a numerical prefix for ordering
+- The main app entry point (app.py) uses Streamlit's navigation feature to define the pages
+- Streamlit session state is used for maintaining application state across page refreshes
+- UI components are organized with standard patterns: sidebar for settings, main area for results
+- Components are reused across pages when appropriate
+- Progress indicators provide feedback during long-running operations
+
+### Data Handling
+- Stencil data is cached locally for performance
+- SQLite is used for storing and querying stencil metadata
+- Configuration is stored in a YAML file (config.yaml)
+- Search operations are optimized for speed with appropriate indexing
+- Large result sets are managed with pagination
+- Data structures are designed to minimize memory usage while maintaining performance
+
+### File Operations
+- The application supports recursive directory scanning for Visio files
+- It handles various Visio file formats (.vss, .vssx, .vssm)
+- Shape preview functionality extracts graphical information without requiring Visio
+- Network paths are normalized to handle cross-platform issues
+- Temporary file handling includes proper cleanup and error recovery
+- File locking issues are handled gracefully when possible
+
+## UI Implementation Patterns
+- Three-column layout for search results (shape, stencil, location)
+- Consistent icons used throughout the interface
+- Expandable/collapsible sections for detailed information
+- Data visualization used for health analysis
+- Interactive elements provide immediate feedback
+- Responsive design adapts to different screen sizes
+- Preview functionality is modally displayed to avoid cluttering the main interface
+
+## User Preferences
+- Clean, minimal UI with clear information presentation
+- Fast search response times are prioritized
+- Comprehensive stencil health analysis is valued
+- Network path handling is important for shared environments
+- Copy-paste functionality for file paths is frequently used
+- Preview quality is important but acceptable tradeoffs for speed
+
+## Known Challenges
+- Memory usage can be high when scanning large stencil collections
+- Some cross-platform compatibility issues exist, especially for network paths
+- Performance optimization is an ongoing concern
+- Some Visio file formats are more challenging to parse than others
+- Error handling for corrupted files requires careful implementation
+- Database locking can occur with concurrent operations
+- UI responsiveness can decrease during background scanning operations
+
+## Evolution of Decisions
+- Started with a simple file scanner, evolved to include health analysis and temp file cleaning
+- Initially focused on core search functionality, later expanded to include more advanced features
+- Performance optimizations have been added iteratively as the application matured
+- SQLite chosen over more complex database systems for deployment simplicity
+- Streamlit selected for rapid development over custom web frameworks
+- Shape preview generation implemented custom rather than requiring Visio dependency
+
+## Tool Usage Patterns
+- Streamlit for all UI components
+- Pandas for data manipulation and analysis
+- Matplotlib for data visualization
+- SQLite for data storage and querying
+- LXML for XML parsing of Visio files
+- PyYAML for configuration management
+- Pydantic for data validation
+
+## Common Implementation Techniques
+- Background processing for long-running tasks
+- Caching of results to improve performance on repeated operations
+- Progressive loading of large datasets
+- Parallelization of file scanning operations where appropriate
+- User feedback during long operations with progress bars
+- Graceful error handling with informative messages
+- Efficient data structures optimized for search operations
+
+This journal will be updated as new patterns and insights are discovered during the project's development.

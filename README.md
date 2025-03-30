@@ -96,7 +96,7 @@ pip install -r requirements.txt
 ### Starting the Application
 
 ```bash
-streamlit run app/Home.py
+streamlit run app.py
 ```
 
 The application will open in your default web browser at `http://localhost:8501`
@@ -133,7 +133,7 @@ To make the application accessible to others on your local network:
 
 1. Run the application with:
    ```bash
-   streamlit run app/Home.py --server.address=0.0.0.0
+   streamlit run app.py --server.address=0.0.0.0
    ```
 
 2. Find your computer's IP address:
@@ -164,13 +164,15 @@ To make the application accessible to others on your local network:
 
 ```
 streamlit-stencil-search/
-├── app/                  # Application code
-│   ├── pages/            # Additional Streamlit pages
-│   │   └── 01_Temp_File_Cleaner.py  # Temp file cleaner tool
-│   ├── core/             # Business logic
-│   └── Home.py           # Main application entry point
-├── data/                 # Cached stencil data
-├── docs/                 # Documentation
+├── app/                  # Core application logic
+│   └── core/             # Business logic (parsing, scanning, etc.)
+├── pages/                # Streamlit pages
+│   ├── 01_Visio_Stencil_Explorer.py # Main search interface
+│   ├── 02_Temp_File_Cleaner.py      # Temp file cleaner tool
+│   └── 03_Stencil_Health.py         # Stencil health analysis tool
+├── data/                 # Cached stencil data (database)
+├── docs/                 # Documentation and images
+├── app.py                # Main application entry point (using st.navigation)
 └── requirements.txt      # Python dependencies
 ```
 

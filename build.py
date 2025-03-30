@@ -27,13 +27,13 @@ def build_executable():
             "--windowed",
             f"--icon={icon_path}",
             "--add-data=config.yaml:.",
-            "--add-data=app/pages:app/pages",
+            "--add-data=pages:pages",  # Updated path
             "--hidden-import=yaml",
             "--hidden-import=pandas",
             "--hidden-import=xlsxwriter",
-            "app/Home.py"
+            "app.py"  # Updated entry point
         ]
-        
+
         # Run PyInstaller
         subprocess.check_call(pyinstaller_args)
         
@@ -69,9 +69,9 @@ COPY . .
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app/Home.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"] # Updated entry point
 """
-    
+
     with open("Dockerfile", "w") as f:
         f.write(dockerfile_content)
     

@@ -6,8 +6,8 @@ import sys
 import platform
 from pathlib import Path
 
-# Add the parent directory to path so we can import from core
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# Add the project root directory to path so we can import from core
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core import config
 
@@ -116,9 +116,10 @@ def main():
         scan_dir = st.text_input(
             "Directory:", 
             value=default_dir,
-            help="Enter directory path to scan"
+            help="Enter directory path to scan",
+            key="temp_cleaner_dir_mobile"
         )
-        scan_btn = st.button("🔍 Scan", use_container_width=True)
+        scan_btn = st.button("🔍 Scan", use_container_width=True, key="temp_cleaner_scan_btn_mobile")
         
         if platform.system() != "Windows":
             st.warning("⚠️ Limited functionality on non-Windows systems.")
@@ -127,12 +128,13 @@ def main():
         scan_dir = st.text_input(
             "Directory to scan:", 
             value=default_dir,
-            help="Enter the full path to the directory you want to scan for Visio temp files"
+            help="Enter the full path to the directory you want to scan for Visio temp files",
+            key="temp_cleaner_dir_desktop"
         )
         
         col1, col2 = st.columns([1, 4])
         with col1:
-            scan_btn = st.button("🔍 Scan for Temp Files", use_container_width=True)
+            scan_btn = st.button("🔍 Scan for Temp Files", use_container_width=True, key="temp_cleaner_scan_btn_desktop")
         with col2:
             if platform.system() != "Windows":
                 st.warning("⚠️ Full functionality requires Windows with PowerShell. Limited functionality available on other systems.")
@@ -277,5 +279,8 @@ def main():
             which can resolve many common Visio errors.
             """)
 
+# Call main() only once using if/else pattern
 if __name__ == "__main__":
+    main()
+else:
     main() 
