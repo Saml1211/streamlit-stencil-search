@@ -12,6 +12,8 @@
 - ✅ Physical file path visibility
 - ✅ Last scan timestamp display
 - ✅ Visual shape preview functionality
+- ✅ Full-text search capability for improved search speed and accuracy
+- ✅ Advanced search options UI with FTS toggle
 
 ### Stencil Health Monitoring
 - ✅ Duplicate shape detection
@@ -38,6 +40,8 @@
 - ✅ Fast directory scanning with caching
 - ✅ Background scanning threads
 - ✅ Configurable auto-refresh
+- ✅ Optimized database structure with proper indexing
+- ✅ Database performance benchmarking tools
 
 ### Additional Features
 - ✅ Visio Temp File Cleaner
@@ -51,6 +55,14 @@
 - 🔄 Enhancing error handling and recovery
 - 🔄 Improving UI consistency across pages
 - 🔄 Cross-platform testing and fixes
+- 🔄 UI layout improvements:
+  - 🔄 Consolidating duplicate sidebar elements
+  - 🔄 Improving search interface with better alignment
+  - 🔄 Adding informative placeholders for search state
+  - 🔄 Restructuring filter controls using expanders
+  - 🔄 Converting date/range filters to standard Streamlit inputs
+  - 🔄 Implementing toggle for Visio connection
+  - 🔄 Adding data visualization for shape distribution
 
 ## What's Left to Build
 
@@ -90,6 +102,12 @@
 - 🐞 Some UI elements not scaling properly on very small screens
 - 🐞 Search results pagination could be improved
 - 🐞 Occasional UI flickering during search
+- 🐞 Duplicate sidebar elements causing confusion and wasting space
+- 🐞 Poor visual hierarchy in the main area lacks clear organization
+- 🐞 Empty/placeholder sections create an unfinished appearance
+- 🐞 Disconnected UI elements creating confusion (e.g., search button under Shape Collection)
+- 🐞 Inefficient space usage in main content area
+- 🐞 Visio connection UI lacks clear status indicators
 
 ### Technical Issues
 - 🐞 Occasional database locking with concurrent operations
@@ -101,4 +119,5 @@
 - Search operations return results in under 1 second
 - Shape previews are generated without requiring Visio
 - Temp file cleaning successfully identifies and removes problematic files
-- Stencil health analysis provides actionable insights 
+- Stencil health analysis provides actionable insights
+- User interface is intuitive and efficient with clear visual hierarchy 

@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import threading
 from typing import List, Dict, Any, Optional
@@ -34,6 +34,10 @@ class StencilDatabase:
         """Initialize database schema"""
         with self._lock:
             conn = self._get_conn()
+            
+            # Check database integrity first
+            self._check_integrity()
+            
             # Use PRAGMA foreign_keys=ON; if needed, depending on SQLite version/config
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS stencils (
@@ -59,6 +63,43 @@ class StencilDatabase:
             """)
             # Added shapes table
 
+            # Create full-text search virtual table for shapes
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS shapes_fts USING fts5(
+                    id, name, stencil_path, 
+                    content='shapes', 
+                    content_rowid='id',
+                    tokenize='porter unicode61'
+                )
+            """)
+            
+            # Create triggers to keep the FTS index up to date
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS shapes_ai AFTER INSERT ON shapes
+                BEGIN
+                    INSERT INTO shapes_fts(rowid, name, stencil_path)
+                    VALUES (new.id, new.name, new.stencil_path);
+                END
+            """)
+            
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS shapes_ad AFTER DELETE ON shapes
+                BEGIN
+                    INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path)
+                    VALUES ('delete', old.id, old.name, old.stencil_path);
+                END
+            """)
+            
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS shapes_au AFTER UPDATE ON shapes
+                BEGIN
+                    INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path)
+                    VALUES ('delete', old.id, old.name, old.stencil_path);
+                    INSERT INTO shapes_fts(rowid, name, stencil_path)
+                    VALUES (new.id, new.name, new.stencil_path);
+                END
+            """)
+
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_stencils_path
                 ON stencils(path)
@@ -71,7 +112,23 @@ class StencilDatabase:
                 CREATE INDEX IF NOT EXISTS idx_shapes_name
                 ON shapes(name)
             """)
-            # Added indexes for shapes table
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_shapes_name_stencil_path
+                ON shapes(name, stencil_path)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_stencils_last_modified
+                ON stencils(last_modified)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_stencils_file_size
+                ON stencils(file_size)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_stencils_shape_count
+                ON stencils(shape_count)
+            """)
+            # Added more indexes for improved search filtering
 
             # Add table for preset stencil directories
             conn.execute("""
@@ -133,6 +190,78 @@ class StencilDatabase:
 
             conn.commit()
 
+    def _check_integrity(self):
+        """Check database integrity and attempt repair if needed"""
+        try:
+            conn = self._get_conn()
+            
+            # Run the integrity check
+            integrity_check = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            
+            if integrity_check != "ok":
+                print(f"Database integrity check failed: {integrity_check}")
+                
+                # Create a backup of the corrupt database
+                import shutil
+                from datetime import datetime
+                backup_path = f"{self.db_path}.backup.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                shutil.copy2(self.db_path, backup_path)
+                print(f"Created database backup at {backup_path}")
+                
+                # Attempt to repair it by recreating tables
+                self._recreate_tables()
+                return False
+            
+            # Also check for WAL file and clean up if needed
+            import os
+            wal_path = f"{self.db_path}-wal"
+            if os.path.exists(wal_path):
+                try:
+                    # Try to checkpoint and close the WAL file
+                    conn.execute("PRAGMA wal_checkpoint")
+                    print("Checkpointed WAL file")
+                except Exception as e:
+                    print(f"WAL checkpoint error: {e}")
+            
+            return True
+        except Exception as e:
+            print(f"Error checking database integrity: {e}")
+            return False
+            
+    def _recreate_tables(self):
+        """Recreate database tables (use when integrity check fails)"""
+        print("Recreating database tables...")
+        
+        try:
+            # Close existing connection
+            if self._conn:
+                self._conn.close()
+                self._conn = None
+            
+            # Remove corrupted database
+            import os
+            if os.path.exists(self.db_path):
+                os.remove(self.db_path)
+                print(f"Removed corrupted database at {self.db_path}")
+                
+            # Remove any WAL or journal files
+            for suffix in ['-wal', '-shm', '-journal']:
+                wal_path = f"{self.db_path}{suffix}"
+                if os.path.exists(wal_path):
+                    os.remove(wal_path)
+                    print(f"Removed {wal_path}")
+            
+            # Create a new connection
+            self._conn = None
+            conn = self._get_conn()
+            
+            # Schema will be recreated when needed
+            print("Database tables recreated successfully. Data will need to be rescanned.")
+            return True
+        except Exception as e:
+            print(f"Error recreating database tables: {e}")
+            return False
+
     def cache_stencil(self, stencil_data: Dict[str, Any]):
         """Cache a single stencil's data, including its shapes"""
         with self._lock:
@@ -144,35 +273,81 @@ class StencilDatabase:
             last_modified_iso = datetime.fromtimestamp(file_stat.st_mtime).isoformat()
             file_size = file_stat.st_size
 
-            # Insert or replace stencil metadata
-            cursor.execute("""
-                INSERT OR REPLACE INTO stencils
-                (path, name, extension, shape_count, file_size, last_scan, last_modified)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                stencil_data['path'],
-                stencil_data['name'],
-                stencil_data['extension'],
-                stencil_data['shape_count'],
-                file_size, # Added file_size
-                datetime.now().isoformat(),
-                last_modified_iso
-            ))
+            try:
+                # Start a transaction for atomicity
+                conn.execute("BEGIN TRANSACTION")
+                
+                # Insert or replace stencil metadata
+                cursor.execute("""
+                    INSERT OR REPLACE INTO stencils
+                    (path, name, extension, shape_count, file_size, last_scan, last_modified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    stencil_data['path'],
+                    stencil_data['name'],
+                    stencil_data['extension'],
+                    stencil_data['shape_count'],
+                    file_size, # Added file_size
+                    datetime.now().isoformat(),
+                    last_modified_iso
+                ))
 
-            # Delete existing shapes for this stencil before inserting new ones
-            cursor.execute("DELETE FROM shapes WHERE stencil_path = ?", (stencil_data['path'],))
+                # Delete existing shapes for this stencil before inserting new ones
+                cursor.execute("DELETE FROM shapes WHERE stencil_path = ?", (stencil_data['path'],))
 
-            # Insert shapes if any
-            if stencil_data['shapes']:
-                shapes_to_insert = [
-                    (stencil_data['path'], shape_name)
-                    for shape_name in stencil_data['shapes']
-                ]
-                cursor.executemany("""
-                    INSERT INTO shapes (stencil_path, name) VALUES (?, ?)
-                """, shapes_to_insert)
+                # Insert shapes if any
+                shape_ids = []
+                if stencil_data['shapes']:
+                    for shape_name in stencil_data['shapes']:
+                        cursor.execute("""
+                            INSERT INTO shapes (stencil_path, name) VALUES (?, ?)
+                        """, (stencil_data['path'], shape_name))
+                        shape_ids.append(cursor.lastrowid)
 
-            conn.commit() # Ensure commit is included
+                # Commit transaction
+                conn.execute("COMMIT")
+                
+                # Verify FTS index is in sync
+                # This shouldn't be necessary with the triggers, but added as a safety check
+                try:
+                    fts_rows = conn.execute(
+                        "SELECT COUNT(*) FROM shapes_fts WHERE stencil_path = ?", 
+                        (stencil_data['path'],)
+                    ).fetchone()[0]
+                    
+                    actual_rows = len(stencil_data['shapes']) if stencil_data['shapes'] else 0
+                    
+                    # If mismatch detected, rebuild FTS for this stencil
+                    if fts_rows != actual_rows:
+                        print(f"FTS index mismatch detected for {stencil_data['name']}. Rebuilding...")
+                        
+                        # Remove from FTS for this stencil
+                        conn.execute(
+                            "DELETE FROM shapes_fts WHERE stencil_path = ?", 
+                            (stencil_data['path'],)
+                        )
+                        
+                        # Reinsert into FTS
+                        for shape_id in shape_ids:
+                            shape_data = conn.execute(
+                                "SELECT id, name, stencil_path FROM shapes WHERE id = ?", 
+                                (shape_id,)
+                            ).fetchone()
+                            
+                            if shape_data:
+                                conn.execute("""
+                                    INSERT INTO shapes_fts(rowid, name, stencil_path)
+                                    VALUES (?, ?, ?)
+                                """, (shape_data[0], shape_data[1], shape_data[2]))
+                except Exception as e:
+                    print(f"Error verifying FTS index: {e}")
+                    # Don't fail the whole operation for FTS verification
+                
+            except Exception as e:
+                # Rollback transaction on error
+                conn.execute("ROLLBACK")
+                print(f"Error caching stencil: {e}")
+                raise
     
     def get_cached_stencils(self) -> List[Dict[str, Any]]:
         """Retrieve all cached stencils with their shapes"""
@@ -481,3 +656,224 @@ class StencilDatabase:
             except Exception as e:
                 print(f"Error removing preset directory: {e}")
                 return False 
+
+    def rebuild_fts_index(self):
+        """Rebuild the full-text search index for existing shape data"""
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                # First check if FTS table exists
+                table_exists = False
+                try:
+                    conn.execute("SELECT 1 FROM shapes_fts LIMIT 1")
+                    table_exists = True
+                except sqlite3.OperationalError:
+                    table_exists = False
+                
+                # If table doesn't exist, recreate it
+                if not table_exists:
+                    print("FTS table doesn't exist. Creating...")
+                    conn.execute("""
+                        CREATE VIRTUAL TABLE IF NOT EXISTS shapes_fts USING fts5(
+                            id, name, stencil_path, 
+                            content='shapes', 
+                            content_rowid='id',
+                            tokenize='porter unicode61'
+                        )
+                    """)
+                    
+                    # Recreate triggers
+                    conn.execute("""
+                        CREATE TRIGGER IF NOT EXISTS shapes_ai AFTER INSERT ON shapes
+                        BEGIN
+                            INSERT INTO shapes_fts(rowid, name, stencil_path)
+                            VALUES (new.id, new.name, new.stencil_path);
+                        END
+                    """)
+                    
+                    conn.execute("""
+                        CREATE TRIGGER IF NOT EXISTS shapes_ad AFTER DELETE ON shapes
+                        BEGIN
+                            INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path)
+                            VALUES ('delete', old.id, old.name, old.stencil_path);
+                        END
+                    """)
+                    
+                    conn.execute("""
+                        CREATE TRIGGER IF NOT EXISTS shapes_au AFTER UPDATE ON shapes
+                        BEGIN
+                            INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path)
+                            VALUES ('delete', old.id, old.name, old.stencil_path);
+                            INSERT INTO shapes_fts(rowid, name, stencil_path)
+                            VALUES (new.id, new.name, new.stencil_path);
+                        END
+                    """)
+                
+                # Delete all FTS data
+                conn.execute("DELETE FROM shapes_fts")
+                
+                # Then repopulate from the shapes table
+                conn.execute("""
+                    INSERT INTO shapes_fts(rowid, name, stencil_path)
+                    SELECT id, name, stencil_path FROM shapes
+                """)
+                
+                conn.commit()
+                return True
+            except sqlite3.OperationalError as e:
+                conn.rollback()
+                print(f"SQLite error rebuilding FTS index: {e}")
+                
+                if "database disk image is malformed" in str(e):
+                    print("Database corruption detected. Attempting to recover...")
+                    try:
+                        # Create a backup of the corrupt database
+                        import shutil
+                        from datetime import datetime
+                        backup_path = f"{self.db_path}.backup.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        shutil.copy2(self.db_path, backup_path)
+                        print(f"Created database backup at {backup_path}")
+                        
+                        # Attempt database repair
+                        repair_conn = sqlite3.connect(self.db_path)
+                        repair_conn.execute("PRAGMA integrity_check")
+                        repair_conn.close()
+                        
+                        # Reinitialize the database schema
+                        self._init_db()
+                        print("Database schema reinitialized. Some data may need to be rescanned.")
+                        return True
+                    except Exception as repair_error:
+                        print(f"Database repair failed: {repair_error}")
+                return False
+            except Exception as e:
+                conn.rollback()
+                print(f"Error rebuilding FTS index: {e}")
+                return False
+
+    def search_shapes(self, search_term: str, filters: dict = None, use_fts: bool = True, limit: int = 1000):
+        """
+        Search for shapes with improved performance using FTS5
+        
+        Args:
+            search_term: Text to search for
+            filters: Dictionary of filter criteria
+            use_fts: Whether to use full-text search (faster but less flexible)
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of matching shapes with their stencil information
+        """
+        results = []
+        with self._lock:
+            conn = self._get_conn()
+            
+            try:
+                # Check if FTS table exists and has data
+                has_fts = False
+                try:
+                    fts_check = conn.execute("SELECT COUNT(*) FROM shapes_fts").fetchone()
+                    has_fts = fts_check is not None and fts_check[0] > 0
+                except sqlite3.OperationalError:
+                    # Table doesn't exist or has issues
+                    has_fts = False
+                    print("FTS table not available. Falling back to LIKE search.")
+                
+                # Determine whether to use FTS or LIKE search
+                if use_fts and has_fts and search_term:
+                    # For FTS search, use the virtual table with proper syntax
+                    base_query = """
+                        SELECT s.id, s.name as shape_name, st.name as stencil_name, st.path as stencil_path
+                        FROM shapes_fts fts
+                        JOIN shapes s ON fts.rowid = s.id
+                        JOIN stencils st ON s.stencil_path = st.path
+                        WHERE shapes_fts MATCH ?
+                    """
+                    # Format the FTS query with proper operators
+                    # Use * for prefix matching to improve search
+                    search_param = f"{search_term}*"
+                    params = [search_param]
+                else:
+                    # Fallback to traditional LIKE for simple searches or empty search
+                    base_query = """
+                        SELECT s.id, s.name as shape_name, st.name as stencil_name, st.path as stencil_path
+                        FROM shapes s
+                        JOIN stencils st ON s.stencil_path = st.path
+                        WHERE s.name LIKE ?
+                    """
+                    params = [f"%{search_term}%"]
+                
+                # Add filters if provided
+                if filters:
+                    if filters.get('date_start'):
+                        base_query += " AND st.last_modified >= ?"
+                        params.append(filters['date_start'].isoformat())
+                        
+                    if filters.get('date_end'):
+                        # Add time component for inclusive end date
+                        end_date = filters['date_end'] + timedelta(days=1)
+                        base_query += " AND st.last_modified < ?"
+                        params.append(end_date.isoformat())
+                        
+                    if filters.get('min_size') is not None and filters['min_size'] > 0:
+                        base_query += " AND st.file_size >= ?"
+                        params.append(filters['min_size'])
+                        
+                    if filters.get('max_size') is not None and filters['max_size'] < (50 * 1024 * 1024):
+                        base_query += " AND st.file_size <= ?"
+                        params.append(filters['max_size'])
+                        
+                    if filters.get('min_shapes') is not None and filters['min_shapes'] > 0:
+                        base_query += " AND st.shape_count >= ?"
+                        params.append(filters['min_shapes'])
+                        
+                    if filters.get('max_shapes') is not None and filters['max_shapes'] < 500:
+                        base_query += " AND st.shape_count <= ?"
+                        params.append(filters['max_shapes'])
+                
+                # Add ordering - FTS provides relevance ranking
+                if use_fts and has_fts and search_term:
+                    base_query += " ORDER BY rank, stencil_name, shape_name LIMIT ?"
+                else:
+                    base_query += " ORDER BY stencil_name, shape_name LIMIT ?"
+                
+                params.append(limit)
+                
+                cursor = conn.execute(base_query, params)
+                
+                for row in cursor.fetchall():
+                    highlight_start = -1
+                    highlight_end = -1
+                    
+                    if search_term:
+                        # Calculate highlight positions for UI
+                        shape_name_lower = row['shape_name'].lower()
+                        search_term_lower = search_term.lower()
+                        highlight_start = shape_name_lower.find(search_term_lower)
+                        if highlight_start >= 0:
+                            highlight_end = highlight_start + len(search_term)
+                    
+                    results.append({
+                        'id': row['id'],
+                        'shape': row['shape_name'],
+                        'stencil_name': row['stencil_name'],
+                        'stencil_path': row['stencil_path'],
+                        'highlight_start': highlight_start,
+                        'highlight_end': highlight_end
+                    })
+            except sqlite3.OperationalError as e:
+                print(f"Database error in search_shapes: {e}")
+                # If error suggests a corrupt database, attempt to recover
+                if "malformed" in str(e) or "no such table" in str(e) or "no such column" in str(e):
+                    print("Attempting to recover from database error...")
+                    try:
+                        # Rebuild FTS index and retry with LIKE search
+                        self.rebuild_fts_index()
+                        # Retry with LIKE search (no FTS)
+                        return self.search_shapes(search_term, filters, use_fts=False, limit=limit)
+                    except Exception as recovery_error:
+                        print(f"Recovery failed: {recovery_error}")
+            except Exception as e:
+                print(f"Unexpected error in search_shapes: {e}")
+                
+            return results 

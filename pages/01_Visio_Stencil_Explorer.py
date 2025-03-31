@@ -23,85 +23,96 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Inject JavaScript to track window width for responsive design
-st.markdown("""
-    <script>
-        // Send window width to Streamlit
-        function updateWidth() {
-            window.parent.postMessage({
-                type: "streamlit:setComponentValue",
-                value: window.innerWidth
-            }, "*");
-        }
-        
-        // Update on resize
-        window.addEventListener('resize', updateWidth);
-        // Initial update
-        updateWidth();
-    </script>
-""", unsafe_allow_html=True)
-
-# Add the shared directory preset manager to the sidebar
-with st.sidebar:
-    st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
-    selected_directory = directory_preset_manager(key_prefix="p1_")
-    
-    # Add a separator
-    st.markdown("---")
-
 # Custom CSS for improved UI
 st.markdown("""
 <style>
-    /* Improved container spacing */
+    /* Overall theme and layout */
     div.block-container {padding-top: 1rem;}
-    
-    /* Better button styling */
-    .stButton button {
-        width: 100%;
-        border-radius: 4px;
-    }
-    
-    /* Improved metrics styling */
-    [data-testid="stMetricValue"] {
-        font-size: 1.5rem;
-        font-weight: bold;
+    .stApp {
+        background-color: #121212;
+        color: white;
     }
     
     /* Container styling */
-    [data-testid="stHorizontalBlock"] {
-        gap: 0.5rem;
+    div[data-testid="stVerticalBlock"] div[style] div[data-testid="stVerticalBlock"] {
+        background-color: #1e1e1e;
+        padding: 1rem;
+        border-radius: 4px;
+        border: 1px solid #333;
+        margin-bottom: 1rem;
     }
     
-    /* Better sidebar spacing */
-    section[data-testid="stSidebar"] .block-container {
-        padding-top: 2rem;
+    /* Header styling */
+    h1, h2, h3, h4, h5 {
+        color: white !important;
+    }
+    
+    /* Button styling */
+    .stButton button {
+        width: 100%;
+        border-radius: 0.25rem;
+        background-color: #333;
+        color: white;
+        border: none;
+    }
+    
+    .stButton button:hover {
+        background-color: #444;
     }
     
     /* Search box styling */
     [data-testid="stTextInput"] input {
+        background-color: #333;
+        color: white;
         border-radius: 4px;
+        border: none;
     }
     
-    /* Better header spacing */
-    h1, h2, h3, h4 {
-        margin-top: 0.5rem !important;
-        margin-bottom: 0.5rem !important;
+    /* Checkbox styling */
+    [data-testid="stCheckbox"] {
+        color: white;
     }
     
-    /* Card-like containers */
-    [data-testid="stVerticalBlock"] > div[style] > div[data-testid="stVerticalBlock"] {
-        background-color: #f8f9fa;
-        padding: 0.75rem;
+    /* Result styling */
+    .result-item {
+        padding: 0.5rem;
+        margin-bottom: 0.5rem;
         border-radius: 4px;
-        border: 1px solid #dee2e6;
+        border: 1px solid #444;
+        background-color: #2a2a2a;
+    }
+    
+    /* Better spacing for container headers */
+    div[data-testid="stVerticalBlock"] > div[style] > div[data-testid="stVerticalBlock"] > div:first-child {
         margin-bottom: 1rem;
     }
     
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        [data-testid="stMetricValue"] {
-            font-size: 1.2rem;
-        }
+    /* Ensure text color is white for all elements */
+    .stMarkdown, .stText, caption, a, p, span {
+        color: white !important;
+    }
+    
+    /* Panel styling */
+    [data-testid="stSidebar"] {
+        background-color: #1e1e1e;
+    }
+    
+    /* Make expanders match theme */
+    [data-testid="stExpander"] {
+        background-color: #2a2a2a;
+        border-radius: 4px;
+    }
+    
+    /* Fix divider color */
+    hr {
+        border-color: #444;
+    }
+    
+    /* Info boxes */
+    div[data-testid="stAlert"] {
+        background-color: #2a2a2a;
+        color: white;
+        border: 1px solid #444;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -143,6 +154,28 @@ if 'favorite_stencils' not in st.session_state:
     st.session_state.favorite_stencils = []
 if 'show_favorites' not in st.session_state:
     st.session_state.show_favorites = False
+# About section state
+if 'show_about' not in st.session_state:
+    st.session_state.show_about = False
+# Search options
+if 'show_filters' not in st.session_state:
+    st.session_state.show_filters = False
+if 'use_fts_search' not in st.session_state:
+    st.session_state.use_fts_search = True
+if 'search_result_limit' not in st.session_state:
+    st.session_state.search_result_limit = 1000
+if 'filter_date_start' not in st.session_state:
+    st.session_state.filter_date_start = None
+if 'filter_date_end' not in st.session_state:
+    st.session_state.filter_date_end = None
+if 'filter_min_size' not in st.session_state:
+    st.session_state.filter_min_size = 0
+if 'filter_max_size' not in st.session_state:
+    st.session_state.filter_max_size = 50 * 1024 * 1024  # 50 MB
+if 'filter_min_shapes' not in st.session_state:
+    st.session_state.filter_min_shapes = 0
+if 'filter_max_shapes' not in st.session_state:
+    st.session_state.filter_max_shapes = 500
 
 def background_scan(root_dir: str):
     """Background scanning function"""
@@ -164,18 +197,6 @@ def background_scan(root_dir: str):
         st.session_state.scan_status = f"Error: {str(e)}"
     finally:
         st.session_state.background_scan_running = False
-
-def get_layout_columns():
-    """Get column layout based on screen width"""
-    # Get current browser width using JavaScript
-    width = st.session_state.get('browser_width', 1200)  # Default to desktop
-    
-    if width < 768:  # Mobile
-        return [1, 1, 1]  # Stack columns vertically
-    elif width < 992:  # Tablet
-        return [2, 1, 2]  # Slightly compressed
-    else:  # Desktop
-        return [3, 2, 3]  # Full width
 
 def toggle_shape_preview(shape=None):
     """Toggle shape preview in session state"""
@@ -202,11 +223,6 @@ def generate_export_link(df, file_type):
         download_filename = f'stencil_search_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
     
     return f'<a href="{href}" download="{download_filename}" target="_blank">Download {file_type.upper()}</a>'
-
-def use_search_history(term):
-    """Use a previous search term from history"""
-    # This function will be called when a previous search is clicked
-    return term
 
 def add_to_collection(shape_name, stencil_name, stencil_path):
     """Add a shape to the collection"""
@@ -314,10 +330,17 @@ def toggle_show_favorites():
     """Toggle the favorites view"""
     st.session_state.show_favorites = not st.session_state.show_favorites
 
-# --- New Database Search Function ---
+def toggle_about():
+    """Toggle the about section"""
+    st.session_state.show_about = not st.session_state.show_about
+
+def toggle_options():
+    """Toggle search options visibility"""
+    st.session_state.show_filters = not st.session_state.show_filters
+
 def search_stencils_db(search_term: str, filters: dict) -> List[Dict[str, Any]]:
     """
-    Search the stencil database using SQL based on term and filters.
+    Search the stencil database using the optimized search method.
 
     Args:
         search_term (str): The term to search for in shape names.
@@ -326,101 +349,45 @@ def search_stencils_db(search_term: str, filters: dict) -> List[Dict[str, Any]]:
     Returns:
         List[Dict[str, Any]]: A list of matching shapes with stencil info.
     """
-    results = []
     if not search_term:
-        return results # Don't search if term is empty
+        return []  # Don't search if term is empty
 
     try:
-        db = StencilDatabase() # Assumes db.py is accessible
-        conn = db._get_conn() # Use internal method to get connection
-
-        # Base query joining stencils and shapes
-        sql = """
-            SELECT s.name as shape_name, st.name as stencil_name, st.path as stencil_path
-            FROM shapes s
-            JOIN stencils st ON s.stencil_path = st.path
-            WHERE s.name LIKE ?
-        """
-        params = [f"%{search_term}%"]
-
-        # Add filters dynamically
-        if filters.get('date_start'):
-            sql += " AND st.last_modified >= ?"
-            # Convert date to ISO format string if needed, assuming DB stores as TEXT ISO
-            params.append(filters['date_start'].isoformat())
-        if filters.get('date_end'):
-            sql += " AND st.last_modified <= ?"
-            # Add time component for inclusive end date? Or handle in query?
-            # For simplicity, using <= date string. Might need adjustment based on DB storage.
-            end_date_inclusive = filters['date_end'] + timedelta(days=1)
-            params.append(end_date_inclusive.isoformat()) # Compare up to the start of the next day
-        if filters.get('min_size') is not None:
-             # Check if slider is not at default min
-            if filters['min_size'] > 0:
-                sql += " AND st.file_size >= ?"
-                params.append(filters['min_size'])
-        if filters.get('max_size') is not None:
-             # Check if slider is not at default max (adjust 50*1024*1024 if needed)
-            if filters['max_size'] < (50 * 1024 * 1024): # Example max check
-                sql += " AND st.file_size <= ?"
-                params.append(filters['max_size'])
-        if filters.get('min_shapes') is not None:
-            # Check if slider is not at default min
-            if filters['min_shapes'] > 0:
-                sql += " AND st.shape_count >= ?"
-                params.append(filters['min_shapes'])
-        if filters.get('max_shapes') is not None:
-            # Check if slider is not at default max (adjust 500 if needed)
-            if filters['max_shapes'] < 500: # Example max check
-                sql += " AND st.shape_count <= ?"
-                params.append(filters['max_shapes'])
-
-        sql += " ORDER BY st.name, s.name" # Add ordering
-
-        cursor = conn.execute(sql, tuple(params))
-
-        # Format results
-        for row in cursor.fetchall():
-            results.append({
-                'shape': row['shape_name'],
-                'stencil_name': row['stencil_name'],
-                'stencil_path': row['stencil_path'],
-                # Add highlight info if needed (can be done post-query)
-                'highlight_start': row['shape_name'].lower().find(search_term.lower()),
-                'highlight_end': row['shape_name'].lower().find(search_term.lower()) + len(search_term)
-            })
-
+        db = StencilDatabase()
+        # Use the new optimized search method
+        use_fts = st.session_state.get('use_fts_search', True)
+        results = db.search_shapes(
+            search_term=search_term,
+            filters=filters,
+            use_fts=use_fts,
+            limit=st.session_state.get('search_result_limit', 1000)
+        )
+        db.close()
+        return results
+        
     except Exception as e:
         st.error(f"Database search error: {e}")
-    finally:
-        if 'db' in locals() and db:
-            db.close() # Ensure connection is closed
-
-    return results
-# --- End Database Search Function ---
+        import traceback
+        st.code(traceback.format_exc())
+        return []
 
 def main():
-    # No need to inject JavaScript to track window width - now handled in app.py
-    
-    # Check for mobile display
-    is_mobile = st.session_state.get('browser_width', 1200) < 768
-    
-    # Page title and description
+    # Page title
     st.title("Visio Stencil Explorer")
     
-    # About section with persistent state
-    if 'show_about' not in st.session_state:
-        st.session_state.show_about = False
-        
-    about_col1, about_col2 = st.columns([6, 1])
-    with about_col1:
+    # Page description and About button
+    title_row = st.columns([6, 1])
+    with title_row[0]:
         st.markdown("Search for shapes and import them into Visio.")
-    with about_col2:
-        if st.button("ℹ️ About", key="about_btn"):
-            st.session_state.show_about = not st.session_state.show_about
-            
+    
+    with title_row[1]:
+        about_btn = st.button("About", key="about_btn")
+        if about_btn:
+            toggle_about()
+    
+    # Show About section if enabled
     if st.session_state.show_about:
-        with st.expander("About this Application", expanded=True):
+        with st.expander("About Visio Stencil Explorer", expanded=True):
             st.markdown("""
             ### Visio Stencil Explorer
             
@@ -432,57 +399,12 @@ def main():
             - Add shapes to a collection
             - Import shapes directly into Visio
             - Save favorite stencils for quick access
+            
+            Use the search options to filter and find exactly what you need.
             """)
     
-    # Initialize session state if needed
-    if 'search_results' not in st.session_state:
-        st.session_state.search_results = []
-    if 'shape_collection' not in st.session_state:
-        st.session_state.shape_collection = []
-    if 'background_scan_running' not in st.session_state:
-        st.session_state.background_scan_running = False
-    if 'scan_progress' not in st.session_state:
-        st.session_state.scan_progress = 0
-    if 'scan_status' not in st.session_state:
-        st.session_state.scan_status = ""
-    if 'visio_connected' not in st.session_state:
-        st.session_state.visio_connected = False
-    if 'visio_documents' not in st.session_state:
-        st.session_state.visio_documents = []
-    if 'selected_doc_index' not in st.session_state:
-        st.session_state.selected_doc_index = 1
-    if 'selected_page_index' not in st.session_state:
-        st.session_state.selected_page_index = 1
-    if 'search_history' not in st.session_state:
-        st.session_state.search_history = []
-    if 'preview_shape' not in st.session_state:
-        st.session_state.preview_shape = None
-    if 'show_favorites' not in st.session_state:
-        st.session_state.show_favorites = False
-    if 'filter_date_start' not in st.session_state:
-        st.session_state.filter_date_start = None
-    if 'filter_date_end' not in st.session_state:
-        st.session_state.filter_date_end = None
-    if 'filter_min_size' not in st.session_state:
-        st.session_state.filter_min_size = 0
-    if 'filter_max_size' not in st.session_state:
-        st.session_state.filter_max_size = 50 * 1024 * 1024  # 50 MB
-    if 'filter_min_shapes' not in st.session_state:
-        st.session_state.filter_min_shapes = 0
-    if 'filter_max_shapes' not in st.session_state:
-        st.session_state.filter_max_shapes = 500
-    if 'show_filters' not in st.session_state:
-        st.session_state.show_filters = False
-    
-    # Create three columns: sidebar, main content, and shape collection
-    # Use responsive layout based on screen size
-    if is_mobile:
-        # Stack components vertically on mobile
-        main_col = st.container()
-        collection_col = st.container()
-    else:
-        # Use columns on desktop
-        main_col, collection_col = st.columns([2, 1])
+    # Create two main columns for better layout
+    search_col, workspace_col = st.columns([2, 1])
     
     # Use the root_dir from the session state with a fallback default
     if 'last_dir' in st.session_state:
@@ -493,94 +415,144 @@ def main():
         # Store it in session state for next time
         st.session_state.last_dir = root_dir
     
-    # Main column content
-    with main_col:
-        # Toggle for advanced filters
-        filter_col1, filter_col2 = st.columns([6, 1])
-        with filter_col1:
-            st.write("Advanced Filters:")
-        with filter_col2:
-            if st.button("🔍 Filters", key="toggle_filters"):
-                st.session_state.show_filters = not st.session_state.show_filters
-                st.rerun()
-        
-        # Add the filter UI to the sidebar
-        if st.session_state.show_filters:
-            with st.sidebar.container(border=True):
-                # Date filters
-                st.sidebar.markdown("**Date Modified**")
-                date_col1, date_col2 = st.sidebar.columns(2)
-                with date_col1:
-                    st.session_state.filter_date_start = st.date_input(
-                        "From", value=st.session_state.filter_date_start,
-                        key="date_start"
-                    )
-                with date_col2:
-                    st.session_state.filter_date_end = st.date_input(
-                        "To", value=st.session_state.filter_date_end,
-                        key="date_end"
-                    )
+    # SEARCH COLUMN (Left) - Search and Results
+    with search_col:
+        # Search container - Simplified and focused on search function
+        with st.container(border=True):
+            st.write("### Search")
+            
+            # Search bar with button - Primary action at the top
+            search_row = st.columns([5, 1])
+            with search_row[0]:
+                search_term = st.text_input("Search for shapes", key="search_input", label_visibility="collapsed")
+            with search_row[1]:
+                search_button = st.button("Search", key="search_button", use_container_width=True)
+            
+            # Search options toggle - Directly below search for easy access
+            options_row = st.columns([5, 1])
+            with options_row[0]:
+                st.caption("Need to filter results? Use search options.")
+            with options_row[1]:
+                options_btn = st.button("Options", key="options_btn")
+                if options_btn:
+                    toggle_options()
+            
+            # Search options - When expanded
+            if st.session_state.show_filters:
+                with st.expander("Search Options", expanded=True):
+                    # Favorites checkbox - Moved to options for consistency
+                    st.checkbox("Show Favorites Only", 
+                        value=st.session_state.show_favorites,
+                        key="show_favorites_toggle",
+                        help="Only show shapes from favorite stencils")
+                    
+                    # Search method options in one row
+                    method_col1, method_col2 = st.columns(2)
+                    with method_col1:
+                        st.checkbox("Use Fast Search (FTS)", 
+                                key="use_fts_search", 
+                                help="Toggle between fast full-text search and standard search. Fast search is more efficient but might miss some partial matches.")
+                    with method_col2:
+                        st.number_input("Result Limit", 
+                                min_value=100, 
+                                max_value=10000, 
+                                step=100,
+                                key="search_result_limit",
+                                help="Maximum number of search results to display")
+                    
+                    # Date filters
+                    st.write("##### Date Filters")
+                    date_col1, date_col2 = st.columns(2)
+                    with date_col1:
+                        st.date_input("From Date", 
+                                key="filter_date_start", 
+                                value=None,
+                                help="Filter stencils by modification date (starting from)")
+                    with date_col2:
+                        st.date_input("To Date", 
+                                key="filter_date_end", 
+                                value=None,
+                                help="Filter stencils by modification date (ending at)")
+                    
+                    # Size and shape count filters
+                    st.write("##### Size and Shape Filters")
+                    # File size filters
+                    st.slider("File Size (KB)", 
+                            min_value=0, 
+                            max_value=int(50 * 1024), # 50 MB in KB
+                            value=(0, int(50 * 1024)),
+                            key="file_size_range",
+                            help="Filter stencils by file size")
+                    
+                    # Update individual min/max size for the filter dict
+                    # Convert KB to bytes
+                    if 'file_size_range' in st.session_state:
+                        st.session_state.filter_min_size = st.session_state.file_size_range[0] * 1024
+                        st.session_state.filter_max_size = st.session_state.file_size_range[1] * 1024
+                    
+                    # Shape count filters
+                    st.slider("Shape Count", 
+                            min_value=0, 
+                            max_value=500,
+                            value=(0, 500),
+                            key="shape_count_range",
+                            help="Filter stencils by number of shapes")
+                    
+                    # Update individual min/max shape count for the filter dict
+                    if 'shape_count_range' in st.session_state:
+                        st.session_state.filter_min_shapes = st.session_state.shape_count_range[0]
+                        st.session_state.filter_max_shapes = st.session_state.shape_count_range[1]
+                    
+                    # Reset filters button
+                    if st.button("Reset Filters", key="reset_filters"):
+                        st.session_state.filter_date_start = None
+                        st.session_state.filter_date_end = None
+                        st.session_state.filter_min_size = 0
+                        st.session_state.filter_max_size = 50 * 1024 * 1024
+                        st.session_state.filter_min_shapes = 0
+                        st.session_state.filter_max_shapes = 500
+                        st.session_state.show_favorites = False
+                        st.rerun()
+            
+            # Recent searches - More prominent placement
+            if st.session_state.search_history:
+                st.write("##### Recent Searches")
+                history_cols = st.columns(min(5, len(st.session_state.search_history)))
                 
-                # File size filters
-                st.sidebar.markdown("**File Size (MB)**")
-                # Convert bytes to MB (÷ 1024*1024)
-                size_values = [st.session_state.filter_min_size/(1024*1024), st.session_state.filter_max_size/(1024*1024)]
-                min_size, max_size = st.sidebar.slider(
-                    "Size Range", 
-                    min_value=0.0, 
-                    max_value=50.0,  # Now in MB directly
-                    value=size_values,
-                    step=0.5,  # Smaller step in MB (0.5 MB increments)
-                    key="size_slider"
-                )
-                # Convert back from MB to bytes for storage
-                st.session_state.filter_min_size = min_size * (1024 * 1024)  # Convert back to bytes
-                st.session_state.filter_max_size = max_size * (1024 * 1024)  # Convert back to bytes
-                
-                # Shape count filters
-                st.sidebar.markdown("**Shape Count**")
-                shape_values = [st.session_state.filter_min_shapes, st.session_state.filter_max_shapes]
-                min_shapes, max_shapes = st.sidebar.slider(
-                    "Shape Range", 
-                    min_value=0, 
-                    max_value=500, 
-                    value=shape_values,
-                    step=5,
-                    key="shape_slider"
-                )
-                st.session_state.filter_min_shapes = min_shapes
-                st.session_state.filter_max_shapes = max_shapes
-                
-                # Reset filters button
-                if st.sidebar.button("Reset Filters", key="reset_filters"):
-                    st.session_state.filter_date_start = None
-                    st.session_state.filter_date_end = None
-                    st.session_state.filter_min_size = 0
-                    st.session_state.filter_max_size = 50 * 1024 * 1024
-                    st.session_state.filter_min_shapes = 0
-                    st.session_state.filter_max_shapes = 500
-                    st.rerun()
-
-        # Favorites toggle in sidebar
-        st.sidebar.markdown("<h3>Favorites</h3>", unsafe_allow_html=True)
-        show_favorites = st.sidebar.checkbox(
-            "Show Favorites Only", 
-            value=st.session_state.show_favorites,
-            key="show_favorites_toggle"
-        )
-        if show_favorites != st.session_state.show_favorites:
-            st.session_state.show_favorites = show_favorites
-            st.rerun()
-        
-        # Add search input field
-        st.markdown("### Search Stencils")
-        search_col1, search_col2 = st.columns([5, 1])
-        
-        with search_col1:
-            search_term = st.text_input("Enter shape name", key="search_input")
-        
-        with search_col2:
-            search_button = st.button("🔍 Search", key="search_button")
+                for i, term in enumerate(reversed(st.session_state.search_history)):
+                    col_idx = i % 5
+                    with history_cols[col_idx]:
+                        if st.button(term, key=f"history_{i}", use_container_width=True):
+                            # Use this search term
+                            filters = {
+                                'date_start': st.session_state.filter_date_start,
+                                'date_end': st.session_state.filter_date_end,
+                                'min_size': st.session_state.filter_min_size,
+                                'max_size': st.session_state.filter_max_size,
+                                'min_shapes': st.session_state.filter_min_shapes,
+                                'max_shapes': st.session_state.filter_max_shapes
+                            }
+                            st.session_state.search_results = search_stencils_db(term, filters)
+                            # Update the search input
+                            st.session_state.search_input = term
+                            st.rerun()
+            
+            # Tools section - Moved to bottom of search container
+            st.write("##### Tools")
+            update_btn = st.button("Update Cache", key="update_btn", use_container_width=True,
+                                  help="Scan directories and update the stencil cache")
+            
+            # Handle scanning
+            if update_btn and not st.session_state.background_scan_running:
+                if not os.path.exists(root_dir):
+                    st.error(f"Directory does not exist: {root_dir}")
+                else:
+                    background_scan(root_dir)
+            
+            # Show scan progress if running
+            if st.session_state.background_scan_running:
+                st.progress(st.session_state.scan_progress / 100)
+                st.caption(st.session_state.scan_status)
         
         # Handle search
         if search_button and search_term:
@@ -606,124 +578,97 @@ def main():
         
         # Display search results
         if st.session_state.search_results:
-            st.markdown(f"### Results ({len(st.session_state.search_results)} shapes found)")
-            
-            # Create a DataFrame for the results
-            df = pd.DataFrame([
-                {
-                    "Shape": item["shape"],
-                    "Stencil": item["stencil_name"],
-                    "Path": item["stencil_path"]
-                } for item in st.session_state.search_results
-            ])
-            
-            # Show the results
-            for idx, row in df.iterrows():
-                with st.container(border=True):
-                    res_col1, res_col2, res_col3 = st.columns([3, 1, 1])
-                    
-                    with res_col1:
-                        st.write(f"**{row['Shape']}**")
-                        st.caption(f"{row['Stencil']}")
-                        st.caption(f"{row['Path']}")
-                    
-                    with res_col2:
-                        if st.button("👁️", key=f"preview_{idx}"):
-                            # Set the shape for preview
-                            toggle_shape_preview({
-                                "name": row['Shape'],
-                                "stencil_name": row['Stencil'],
-                                "stencil_path": row['Path']
-                            })
-                    
-                    with res_col3:
-                        # Check if this stencil is already a favorite
-                        is_fav = is_favorite_stencil(row['Path'])
-                        fav_icon = "★" if is_fav else "☆"
+            with st.container(border=True):
+                st.write(f"### Results ({len(st.session_state.search_results)} shapes found)")
+                
+                # Create a DataFrame for the results
+                df = pd.DataFrame([
+                    {
+                        "Shape": item["shape"],
+                        "Stencil": item["stencil_name"],
+                        "Path": item["stencil_path"]
+                    } for item in st.session_state.search_results
+                ])
+                
+                # Show the results with improved styling
+                for idx, row in df.iterrows():
+                    with st.container():
+                        res_col1, res_col2, res_col3 = st.columns([5, 1, 1])
                         
-                        # Add to collection button
-                        if st.button("➕", key=f"add_{idx}", help="Add to collection"):
-                            add_to_collection(row['Shape'], row['Stencil'], row['Path'])
-            
-            # Export options
-            st.markdown("#### Export Results")
-            export_col1, export_col2, export_col3 = st.columns(3)
-            
-            with export_col1:
-                st.markdown(generate_export_link(df, 'csv'), unsafe_allow_html=True)
-            with export_col2:
-                st.markdown(generate_export_link(df, 'excel'), unsafe_allow_html=True)
-            with export_col3:
-                st.markdown(generate_export_link(df, 'txt'), unsafe_allow_html=True)
+                        with res_col1:
+                            st.markdown(f"**{row['Shape']}**")
+                            st.caption(f"{row['Stencil']}")
+                            st.caption(f"{row['Path']}")
+                        
+                        with res_col2:
+                            if st.button("👁️", key=f"preview_{idx}", help="Preview shape"):
+                                # Set the shape for preview
+                                toggle_shape_preview({
+                                    "name": row['Shape'],
+                                    "stencil_name": row['Stencil'],
+                                    "stencil_path": row['Path']
+                                })
+                        
+                        with res_col3:
+                            # Add to collection button
+                            if st.button("➕", key=f"add_{idx}", help="Add to collection"):
+                                add_to_collection(row['Shape'], row['Stencil'], row['Path'])
+                
+                # Export options
+                st.divider()
+                st.caption("Export Results")
+                export_col1, export_col2, export_col3 = st.columns(3)
+                
+                with export_col1:
+                    st.markdown(generate_export_link(df, 'csv'), unsafe_allow_html=True)
+                with export_col2:
+                    st.markdown(generate_export_link(df, 'excel'), unsafe_allow_html=True)
+                with export_col3:
+                    st.markdown(generate_export_link(df, 'txt'), unsafe_allow_html=True)
         elif search_button and search_term:
             st.info("No shapes found matching your search criteria.")
-        
-        # Show search history
-        if st.session_state.search_history:
-            st.markdown("#### Recent Searches")
-            history_cols = st.columns(min(5, len(st.session_state.search_history)))
+    
+    # WORKSPACE COLUMN (Right) - Collection, Integration, Preview
+    with workspace_col:
+        # Shape collection panel - Positioned at top as primary workspace
+        with st.container(border=True):
+            st.write("### Shape Collection")
             
-            for i, term in enumerate(reversed(st.session_state.search_history)):
-                col_idx = i % 5
-                with history_cols[col_idx]:
-                    if st.button(term, key=f"history_{i}"):
-                        # Use this search term
-                        filters = {
-                            'date_start': st.session_state.filter_date_start,
-                            'date_end': st.session_state.filter_date_end,
-                            'min_size': st.session_state.filter_min_size,
-                            'max_size': st.session_state.filter_max_size,
-                            'min_shapes': st.session_state.filter_min_shapes,
-                            'max_shapes': st.session_state.filter_max_shapes
-                        }
-                        st.session_state.search_results = search_stencils_db(term, filters)
-                        # Update the search input
-                        st.session_state.search_input = term
-                        st.rerun()
-
-        # Add update button
-        update_btn = st.button("🔄 Update Stencil Cache", key="update_btn", use_container_width=False)
-        
-        # Handle scanning
-        if update_btn and not st.session_state.background_scan_running:
-            if not os.path.exists(root_dir):
-                st.error(f"Directory does not exist: {root_dir}")
-            else:
-                background_scan(root_dir)
-        
-        # Show scan progress if running
-        if st.session_state.background_scan_running:
-            st.progress(st.session_state.scan_progress / 100)
-            st.caption(st.session_state.scan_status)
-
-    with collection_col:
-        # Shape collection panel
-        st.markdown("### Shape Collection")
-        if st.session_state.shape_collection:
-            for idx, item in enumerate(st.session_state.shape_collection):
-                with st.container(border=True):
-                    st.write(f"**{item['name']}**")
+            if st.session_state.shape_collection:
+                for idx, item in enumerate(st.session_state.shape_collection):
+                    st.markdown(f"**{item['name']}**")
                     st.caption(item['stencil_name'])
-                    st.button("🗑️", key=f"remove_{idx}", 
-                             on_click=remove_from_collection, args=(idx,))
-            
-            if st.button("Clear All", key="clear_collection"):
-                clear_collection()
-        else:
-            st.info("No shapes in collection")
-            
-        # Visio integration
-        st.markdown("### Visio Integration")
-        refresh_col1, refresh_col2 = st.columns([3, 1])
+                    col1, col2 = st.columns([5, 1])
+                    with col2:
+                        st.button("🗑️", key=f"remove_{idx}", help="Remove from collection",
+                                on_click=remove_from_collection, args=(idx,))
+                    st.divider()
+                
+                # Clear button
+                _, btn_col = st.columns([3, 1])
+                with btn_col:
+                    if st.button("Clear All", key="clear_collection"):
+                        clear_collection()
+            else:
+                st.info("No shapes in collection. Add shapes from search results.")
         
-        with refresh_col2:
-            refresh_visio = st.button("🔄", key="refresh_visio", help="Refresh Visio Connection")
+        # Visio integration - Logically follows collection for workflow
+        with st.container(border=True):
+            # Title and refresh button in one row
+            title_col, refresh_col = st.columns([4, 1])
             
-        with refresh_col1:
+            with title_col:
+                st.write("### Visio Integration")
+            
+            with refresh_col:
+                refresh_visio = st.button("🔄", key="refresh_visio", help="Refresh Visio Connection")
+                
+            # Handle Visio connection
             if refresh_visio:
                 with st.spinner("Connecting to Visio..."):
                     refresh_visio_connection()
             
+            # Show connection status
             if st.session_state.visio_connected:
                 if st.session_state.visio_documents:
                     st.success(f"Connected to Visio ({len(st.session_state.visio_documents)} document(s) open)")
@@ -787,9 +732,9 @@ def main():
                         st.warning("No pages found in the selected document")
                         selected_page_index = 1
                     
-                    # Import button
+                    # Import button with better alignment
                     if st.session_state.shape_collection:
-                        if st.button("📥 Import to Visio", key="import_to_visio"):
+                        if st.button("Import to Visio", key="import_to_visio", use_container_width=True):
                             with st.spinner("Importing shapes to Visio..."):
                                 success, message = import_collection_to_visio(
                                     st.session_state.selected_doc_index,
@@ -804,8 +749,26 @@ def main():
             else:
                 st.error("Not connected to Visio")
                 st.info("Make sure Visio is running and click the refresh button.")
+        
+        # Show shape preview if selected - Placed at the bottom of workspace
+        if st.session_state.preview_shape:
+            with st.container(border=True):
+                st.write("### Shape Preview")
+                shape_data = st.session_state.preview_shape
+                st.caption(f"From: {shape_data['stencil_name']}")
+                
+                # Get shape preview
+                preview = get_shape_preview(shape_data['stencil_path'], shape_data['name'])
+                if preview:
+                    st.image(preview, use_column_width=True, caption=shape_data['name'])
+                else:
+                    st.error("Unable to generate preview")
+                
+                if st.button("Close Preview", key="close_preview"):
+                    st.session_state.preview_shape = None
+                    st.rerun()
 
-# Call main() only once using if/else pattern
+# Call main() only once
 if __name__ == "__main__":
     main()
 else:

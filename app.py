@@ -7,6 +7,50 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 from app.core import config, visio
 from app.core.components import directory_preset_manager
+from app.core.db import StencilDatabase
+
+# Initialize the database and rebuild the FTS index if needed
+@st.cache_resource
+def initialize_database():
+    """Initialize the database and ensure the FTS index is built"""
+    # Print a clear header
+    print("\n" + "="*50)
+    print("INITIALIZING DATABASE")
+    print("="*50)
+    
+    db = StencilDatabase()
+    try:
+        # The integrity check happens automatically during initialization
+        
+        # Attempt to rebuild the FTS index - this is a no-op if already built
+        rebuild_result = db.rebuild_fts_index()
+        if rebuild_result:
+            print("FTS index initialized successfully")
+        else:
+            print("FTS index initialization failed - will use standard search")
+            
+        # Run a quick count to verify database is working
+        try:
+            conn = db._get_conn()
+            stencil_count = conn.execute("SELECT COUNT(*) FROM stencils").fetchone()[0]
+            shape_count = conn.execute("SELECT COUNT(*) FROM shapes").fetchone()[0]
+            print(f"Database contains {stencil_count} stencils and {shape_count} shapes")
+        except Exception as count_error:
+            print(f"Error counting database records: {count_error}")
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        import traceback
+        print(traceback.format_exc())
+    finally:
+        db.close()
+    
+    print("="*50)
+    print("DATABASE INITIALIZATION COMPLETE")
+    print("="*50 + "\n")
+    return True
+
+# Initialize the database at startup
+_ = initialize_database()
 
 # Note: We don't set page_config here because it will be set in the page that's loaded
 # Each page in the pages/ directory has its own st.set_page_config() call
@@ -40,7 +84,7 @@ pg = st.navigation(
 )
 
 # Run the selected page
-# No UI code should come before this line
+# No UI code should come after this line
 pg.run()
 
 # Now that the page has run and set_page_config has been called, 

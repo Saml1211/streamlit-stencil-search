@@ -24,24 +24,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# Inject JavaScript to track window width for responsive design
-st.markdown("""
-    <script>
-        // Send window width to Streamlit
-        function updateWidth() {
-            window.parent.postMessage({
-                type: "streamlit:setComponentValue",
-                value: window.innerWidth
-            }, "*");
-        }
-        
-        // Update on resize
-        window.addEventListener('resize', updateWidth);
-        // Initial update
-        updateWidth();
-    </script>
-""", unsafe_allow_html=True)
-
 # Add the shared directory preset manager to the sidebar
 with st.sidebar:
     st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)

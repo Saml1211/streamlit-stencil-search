@@ -8,6 +8,9 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List
+import time
+import random
+import string
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -234,6 +237,86 @@ def test_favorites(db: StencilDatabase):
         except Exception as e:
             logger.error(f"Failed to remove temp file: {str(e)}")
 
+def test_search_performance():
+    """
+    Test the performance difference between FTS and LIKE-based search
+    """
+    # Create a database connection
+    db = StencilDatabase()
+    
+    try:
+        # Make sure the FTS index is built
+        db.rebuild_fts_index()
+        
+        # Get a list of all shapes for random sampling
+        conn = db._get_conn()
+        cursor = conn.execute("SELECT name FROM shapes LIMIT 10000")
+        shape_names = [row[0] for row in cursor.fetchall()]
+        
+        if not shape_names:
+            print("No shapes found in database. Please scan some stencils first.")
+            return
+        
+        # Generate a list of test search terms:
+        # 1. Exact matches
+        # 2. Prefix matches
+        # 3. Substring matches
+        # 4. Non-existent terms
+        test_terms = []
+        
+        # 1. Exact matches - use 5 random whole shape names
+        exact_matches = random.sample(shape_names, min(5, len(shape_names)))
+        test_terms.extend(exact_matches)
+        
+        # 2. Prefix matches - use first 3-5 characters of 5 random shape names
+        prefix_matches = []
+        for name in random.sample(shape_names, min(5, len(shape_names))):
+            if len(name) > 5:
+                prefix_matches.append(name[:random.randint(3, 5)])
+        test_terms.extend(prefix_matches)
+        
+        # 3. Substring matches - use random 3-5 character substrings from 5 random shape names
+        substring_matches = []
+        for name in random.sample(shape_names, min(5, len(shape_names))):
+            if len(name) > 8:
+                start = random.randint(0, len(name) - 5)
+                substring_matches.append(name[start:start + random.randint(3, 5)])
+        test_terms.extend(substring_matches)
+        
+        # 4. Non-existent terms - generate 5 random strings
+        non_existent = []
+        for _ in range(5):
+            non_existent.append(''.join(random.choices(string.ascii_letters, k=random.randint(4, 8))))
+        test_terms.extend(non_existent)
+        
+        # Run the benchmark
+        print("Running search performance benchmark...")
+        print("=======================================")
+        print(f"Testing {len(test_terms)} search terms")
+        print("---------------------------------------")
+        print("Term                   | FTS Time (ms) | LIKE Time (ms) | FTS Results | LIKE Results")
+        print("---------------------- | ------------- | -------------- | ----------- | ------------")
+        
+        for term in test_terms:
+            # Test FTS search
+            fts_start = time.time()
+            fts_results = db.search_shapes(term, use_fts=True)
+            fts_time = (time.time() - fts_start) * 1000  # Convert to milliseconds
+            
+            # Test LIKE search
+            like_start = time.time()
+            like_results = db.search_shapes(term, use_fts=False)
+            like_time = (time.time() - like_start) * 1000  # Convert to milliseconds
+            
+            # Print results
+            print(f"{term[:20]:<20} | {fts_time:13.2f} | {like_time:14.2f} | {len(fts_results):11} | {len(like_results):12}")
+        
+        print("=======================================")
+        print("Benchmark complete!")
+    
+    finally:
+        db.close()
+
 def main():
     """Main test function"""
     logger.info("Starting database functionality tests...")
@@ -252,6 +335,9 @@ def main():
     
     # Test favorites
     favorites = test_favorites(db)
+    
+    # Test search performance
+    test_search_performance()
     
     # Close the database connection
     logger.info("Closing database connection...")

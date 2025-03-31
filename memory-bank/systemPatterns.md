@@ -55,6 +55,17 @@ streamlit-stencil-search/
 - Persistent data is stored in the data directory
 - Configuration is stored in a YAML file (config.yaml)
 
+### UI Layout Patterns
+- **Responsive Design**: Layout adapts based on screen dimensions
+- **Three-Column Layout**: For desktop displays (sidebar, main content, detail panel)
+- **Vertical Stacking**: For mobile displays
+- **Visual Containers**: Using borders and backgrounds to group related elements
+- **Progressive Disclosure**: Using expanders to hide advanced options
+- **Consistent Navigation**: Sidebar for global navigation and settings
+- **Data Visualization**: Charts to display shape distribution statistics
+- **Informative Feedback**: Status messages guide users through the workflow
+- **Clear Visual Hierarchy**: Heading sizes and spacing guide the user's attention
+
 ## Technical Decisions
 
 ### Framework Choice
@@ -70,4 +81,14 @@ streamlit-stencil-search/
 ### Preview Generation
 - Custom implementation to render shape previews without requiring Visio
 - Balances preview quality with generation speed
-- Works across different versions of Visio file formats 
+- Works across different versions of Visio file formats
+
+### UI Implementation Approach
+- Using Streamlit's built-in components wherever possible
+- Custom HTML/CSS for special styling needs
+- Session state for managing UI state between refreshes
+- Standardized input patterns (sliders, date pickers, etc.)
+- Data-driven visualization with matplotlib
+- Error handling with appropriate user feedback
+- Toggle components for boolean states
+- Progress indicators for long-running operations 
