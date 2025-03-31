@@ -9,19 +9,76 @@ import io
 import matplotlib.pyplot as plt
 import numpy as np
 import re
+import threading
 
 # Add the project root directory to path so we can import from core
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core import scan_directory, parse_visio_stencil, config, get_shape_preview
+from app.core import scan_directory, parse_visio_stencil, config, get_shape_preview, directory_preset_manager, visio
 from app.core.db import StencilDatabase
 
-# Set page config
+# Set page config - MUST be the first Streamlit command
 st.set_page_config(
     page_title="Stencil Health Monitor",
     page_icon="🧪",
     layout="wide",
 )
+
+# Inject JavaScript to track window width for responsive design
+st.markdown("""
+    <script>
+        // Send window width to Streamlit
+        function updateWidth() {
+            window.parent.postMessage({
+                type: "streamlit:setComponentValue",
+                value: window.innerWidth
+            }, "*");
+        }
+        
+        // Update on resize
+        window.addEventListener('resize', updateWidth);
+        // Initial update
+        updateWidth();
+    </script>
+""", unsafe_allow_html=True)
+
+# Add the shared directory preset manager to the sidebar
+with st.sidebar:
+    st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
+    selected_directory = directory_preset_manager(key_prefix="p3_")
+    
+    # Add Visio integration section
+    st.markdown("<h3>Visio Integration</h3>", unsafe_allow_html=True)
+    visio_status_col1, visio_status_col2 = st.columns([3, 1])
+    
+    with visio_status_col2:
+        refresh_btn = st.button("🔄", key="p3_refresh_visio_btn")
+    
+    if refresh_btn or not st.session_state.visio_connected:
+        # Try to connect to Visio
+        connected = visio.connect()
+        st.session_state.visio_connected = connected
+        
+        if connected:
+            st.session_state.visio_documents = visio.get_open_documents()
+            
+            # Get default document and page if available
+            doc_index, page_index, found_valid = visio.get_default_document_page()
+            if found_valid:
+                st.session_state.selected_doc_index = doc_index
+                st.session_state.selected_page_index = page_index
+    
+    with visio_status_col1:
+        if st.session_state.visio_connected:
+            if st.session_state.visio_documents:
+                st.success(f"Visio: {len(st.session_state.visio_documents)} doc(s)")
+            else:
+                st.warning("No Visio documents open")
+        else:
+            st.error("Visio not connected")
+    
+    # Add a separator
+    st.markdown("---")
 
 # Initialize session state for cache
 if 'health_scan_running' not in st.session_state:
@@ -263,110 +320,189 @@ def generate_health_charts(data):
     return buf
 
 def background_health_scan(root_dir):
-    """Run health scan in background"""
-    try:
-        st.session_state.health_scan_running = True
-        st.session_state.health_scan_progress = 0
-        
-        # Run the health analysis
-        health_data = analyze_stencil_health(root_dir)
-        
-        # Store results in session state
-        st.session_state.health_data = health_data
-    except Exception as e:
-        st.error(f"Error during health scan: {str(e)}")
-    finally:
-        st.session_state.health_scan_running = False
+    """Run health scan in background thread"""
+    def run_scan():
+        try:
+            # Analyze stencil health
+            health_data = analyze_stencil_health(root_dir)
+            # Store results in session state
+            st.session_state.health_data = health_data
+        except Exception as e:
+            st.error(f"Error during health scan: {str(e)}")
+        finally:
+            # Mark scan as complete
+            st.session_state.health_scan_running = False
+    
+    # Set scan as running
+    st.session_state.health_scan_running = True
+    st.session_state.health_scan_progress = 0
+    
+    # Start scan in background thread
+    thread = threading.Thread(target=run_scan)
+    thread.start()
 
 def toggle_shape_preview(shape=None):
     """Toggle shape preview in session state"""
     st.session_state.preview_shape = shape
 
 def main():
-    # Inject JavaScript to track window width (for responsive design)
-    st.markdown("""
-        <script>
-            // Send window width to Streamlit
-            function updateWidth() {
-                window.parent.postMessage({
-                    type: "streamlit:setComponentValue",
-                    value: window.innerWidth
-                }, "*");
-            }
-            
-            // Update on resize
-            window.addEventListener('resize', updateWidth);
-            // Initial update
-            updateWidth();
-        </script>
-    """, unsafe_allow_html=True)
+    # Window width tracking is now handled in app.py
     
-    # Initialize session state for health analysis
-    if 'stencil_health_data' not in st.session_state:
-        st.session_state.stencil_health_data = None
-    if 'health_scan_running' not in st.session_state:
-        st.session_state.health_scan_running = False
-    if 'health_scan_progress' not in st.session_state:
-        st.session_state.health_scan_progress = 0
-    if 'health_last_scan_dir' not in st.session_state:
-        st.session_state.health_last_scan_dir = ""
-    if 'selected_stencil_data' not in st.session_state:
-        st.session_state.selected_stencil_data = None
+    st.title("Stencil Health Monitor")
     
-    # Check for mobile display
+    # Use responsive layout based on screen size
     is_mobile = st.session_state.get('browser_width', 1200) < 768
     
-    # Page title
-    st.title("Stencil Health Monitor")
-    st.write("This tool analyzes your Visio stencil files for potential issues:")
-
-    # Issues it can detect
-    with st.container():
-        st.markdown("* **Empty stencils** that contain no shapes")
-        st.markdown("* **Duplicate shapes** within a single stencil")
-        st.markdown("* **Excessively large stencils** that may cause performance issues")
-        st.markdown("* **Unusually large shapes** that exceed normal size limits")
-        st.markdown("* **Potentially corrupt files** that might cause Visio problems")
+    # Page description
+    if is_mobile:
+        st.markdown("Analyze your stencil files for health issues.")
+    else:
+        st.markdown("""
+        This tool analyzes your Visio stencil files for health issues such as empty stencils,
+        duplicate shapes, multiple versions, and potential corruption.
+        """)
     
-    st.caption("Use the export options to generate reports for further analysis. **TIP:** Click on shape names to preview them!")
-    
-    # Directory selection
-    st.header("Select Directory")
-    
-    # Get default directory from config
-    default_dir = config.get("paths.stencil_directory", "./test_data")
-    if not os.path.exists(default_dir):
-        default_dir = "./test_data" if os.path.exists("./test_data") else "Z:/ENGINEERING TEMPLATES/VISIO SHAPES 2025"
-    
-    root_dir = st.text_input(
-        "Stencil Directory",
-        value=default_dir,
-        help="Enter the directory containing Visio stencil files to analyze",
-        key="stencil_health_dir_input"  # Updated unique key
-    )
-    
-    # Analyze button with optional filter controls
-    analyze_col, filter_col = st.columns([1, 3])
-    with analyze_col:
-        analyze_btn = st.button("🧪 Analyze Health", use_container_width=True, key="analyze_health_btn")
-    
-    # Run health scan when button clicked
-    if analyze_btn and not st.session_state.health_scan_running:
+    # Use the directory from session state with a fallback
+    if 'last_dir' in st.session_state:
+        root_dir = st.session_state.last_dir
+    else:
+        # Fallback to a default directory
+        root_dir = config.get("paths.stencil_directory", "./test_data")
+        # Store it in session state for next time
+        st.session_state.last_dir = root_dir
+        
+    # Scan button
+    scan_col1, scan_col2 = st.columns([1, 4])
+    with scan_col1:
+        scan_btn = st.button("🔬 Analyze", use_container_width=True, key="health_scan_btn")
+        
+    # Handle scanning
+    if scan_btn and not st.session_state.health_scan_running:
         if not os.path.exists(root_dir):
             st.error(f"Directory does not exist: {root_dir}")
         else:
-            # Start background scan
-            st.session_state.health_scan_running = True
             background_health_scan(root_dir)
     
-    # Show health scan progress
+    # Show scan progress if running
     if st.session_state.health_scan_running:
         st.progress(st.session_state.health_scan_progress / 100)
-        st.caption("Scanning stencil files for issues...")
+        st.caption("Analyzing stencil health...")
     
-    # Display health results if available
-    if st.session_state.stencil_health_data:
-        display_health_results(st.session_state.stencil_health_data)
+    # Display health analysis results if available
+    if st.session_state.health_data:
+        data = st.session_state.health_data
+        
+        # Show summary
+        summary = data['summary']
+        issues = data['issues']
+        
+        if summary['total_issues'] > 0:
+            st.warning(f"Found {summary['total_issues']} potential issues in {summary['total_stencils']} stencils")
+        else:
+            st.success(f"No issues found in {summary['total_stencils']} stencils")
+        
+        # Quick overview in expandable section
+        with st.expander("Health Analysis Summary"):
+            # Metrics in two rows
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Empty Stencils", summary['empty_stencils'])
+            col2.metric("Stencils with Duplicate Shapes", summary['stencils_with_duplicates'])
+            col3.metric("Corrupt Stencils", summary['corrupt_stencils'])
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Large Stencils", summary['large_stencils'])
+            col2.metric("Version Conflicts", summary['version_conflicts'])
+            col3.metric("Total Stencils Scanned", summary['total_stencils'])
+            
+            # Add health charts
+            if len(issues) > 0:
+                st.subheader("Health Charts")
+                fig = generate_health_charts(data)
+                st.pyplot(fig)
+        
+        # Display issues
+        if issues:
+            st.subheader("Issues Found")
+            
+            # Export options
+            export_col1, export_col2 = st.columns([1, 1])
+            with export_col1:
+                csv_data = export_to_csv(data)
+                st.download_button(
+                    label="📋 Export to CSV",
+                    data=csv_data,
+                    file_name=f"stencil_health_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="export_csv"
+                )
+            with export_col2:
+                excel_data = export_to_excel(data)
+                st.download_button(
+                    label="📊 Export to Excel",
+                    data=excel_data,
+                    file_name=f"stencil_health_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="export_excel"
+                )
+            
+            # Filter options
+            severity_options = ["All", "High", "Medium", "Low"]
+            issue_types = ["All"] + list(set(issue['issue'].split(":")[0] for issue in issues))
+            
+            filter_col1, filter_col2 = st.columns(2)
+            with filter_col1:
+                selected_severity = st.selectbox("Filter by Severity", severity_options, key="sev_filter")
+            with filter_col2:
+                selected_type = st.selectbox("Filter by Issue Type", issue_types, key="type_filter")
+            
+            # Apply filters
+            filtered_issues = issues
+            if selected_severity != "All":
+                filtered_issues = [issue for issue in filtered_issues if issue['severity'] == selected_severity]
+            if selected_type != "All":
+                filtered_issues = [issue for issue in filtered_issues if issue['issue'].startswith(selected_type)]
+            
+            # Display issues in a table
+            issue_table = []
+            for issue in filtered_issues:
+                # Format severity with color
+                if issue['severity'] == 'High':
+                    severity_formatted = "🔴 High"
+                elif issue['severity'] == 'Medium':
+                    severity_formatted = "🟠 Medium"
+                else:
+                    severity_formatted = "🟡 Low"
+                
+                issue_table.append({
+                    "Stencil": issue['name'],
+                    "Issue": issue['issue'],
+                    "Severity": severity_formatted,
+                    "Path": issue['path']
+                })
+            
+            # Convert to DataFrame for display
+            df = pd.DataFrame(issue_table)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("No issues found in your stencils! Everything looks healthy.")
+    
+    # Show shape preview if selected
+    if st.session_state.preview_shape:
+        with st.sidebar:
+            st.subheader("Shape Preview")
+            shape_data = st.session_state.preview_shape
+            st.caption(f"From: {shape_data['stencil_name']}")
+            
+            # Get shape preview
+            preview = get_shape_preview(shape_data['stencil_path'], shape_data['shape'])
+            if preview:
+                st.image(preview, use_column_width=True, caption=shape_data['shape'])
+            else:
+                st.error("Unable to generate preview")
+            
+            if st.button("Close Preview", key="close_preview"):
+                st.session_state.preview_shape = None
+                st.rerun()
 
 # Only call main() once
 if __name__ == "__main__":

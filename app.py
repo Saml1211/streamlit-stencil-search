@@ -5,9 +5,29 @@
 
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
+from app.core import config, visio
+from app.core.components import directory_preset_manager
 
 # Note: We don't set page_config here because it will be set in the page that's loaded
 # Each page in the pages/ directory has its own st.set_page_config() call
+
+# Initialize session state values needed by all pages BEFORE any UI is created
+if 'last_dir' not in st.session_state:
+    # Set default directory from config
+    default_dir = config.get("paths.stencil_directory", "./test_data")
+    st.session_state.last_dir = default_dir
+
+# Initialize Visio integration session state
+if 'visio_connected' not in st.session_state:
+    st.session_state.visio_connected = False
+if 'visio_documents' not in st.session_state:
+    st.session_state.visio_documents = []
+if 'selected_doc_index' not in st.session_state:
+    st.session_state.selected_doc_index = 1
+if 'selected_page_index' not in st.session_state:
+    st.session_state.selected_page_index = 1
+if 'browser_width' not in st.session_state:
+    st.session_state.browser_width = 1200
 
 # Define the pages using st.Page
 # The order in this list determines the order in the sidebar.
@@ -19,13 +39,42 @@ pg = st.navigation(
     ]
 )
 
-# You could add app-wide initialization here if necessary,
-# e.g., loading config, initializing services.
-# from app.core.config import load_config
-# config = load_config()
-# st.session_state['config'] = config
-
 # Run the selected page
+# No UI code should come before this line
 pg.run()
 
-# No other st.write, st.title, etc., should be here.
+# Now that the page has run and set_page_config has been called, 
+# we can add our own UI elements
+
+# Inject JavaScript to track window width for responsive design
+st.markdown("""
+    <script>
+        // Send window width to Streamlit
+        function updateWidth() {
+            window.parent.postMessage({
+                type: "streamlit:setComponentValue",
+                value: window.innerWidth
+            }, "*");
+        }
+        
+        // Update on resize
+        window.addEventListener('resize', updateWidth);
+        // Initial update
+        updateWidth();
+    </script>
+""", unsafe_allow_html=True)
+
+# Add the shared directory preset manager to the sidebar
+# This will be available on all pages
+with st.sidebar:
+    st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
+    try:
+        selected_directory = directory_preset_manager(key_prefix="app_")
+    except Exception as e:
+        st.error(f"Error loading directory preset manager: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        selected_directory = st.session_state.last_dir
+    
+    # Add a separator
+    st.markdown("---")

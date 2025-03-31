@@ -9,14 +9,71 @@ from pathlib import Path
 # Add the project root directory to path so we can import from core
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core import config
+from app.core import config, directory_preset_manager, visio
+from app.core.db import StencilDatabase
 
-# Set page config
+# Set page config - MUST be the first Streamlit command
 st.set_page_config(
     page_title="Visio Temp File Cleaner",
     page_icon="🧹",
     layout="wide",
 )
+
+# Inject JavaScript to track window width for responsive design
+st.markdown("""
+    <script>
+        // Send window width to Streamlit
+        function updateWidth() {
+            window.parent.postMessage({
+                type: "streamlit:setComponentValue",
+                value: window.innerWidth
+            }, "*");
+        }
+        
+        // Update on resize
+        window.addEventListener('resize', updateWidth);
+        // Initial update
+        updateWidth();
+    </script>
+""", unsafe_allow_html=True)
+
+# Add the shared directory preset manager to the sidebar
+with st.sidebar:
+    st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
+    selected_directory = directory_preset_manager(key_prefix="p2_")
+    
+    # Add Visio integration section
+    st.markdown("<h3>Visio Integration</h3>", unsafe_allow_html=True)
+    visio_status_col1, visio_status_col2 = st.columns([3, 1])
+    
+    with visio_status_col2:
+        refresh_btn = st.button("🔄", key="p2_refresh_visio_btn")
+    
+    if refresh_btn or not st.session_state.visio_connected:
+        # Try to connect to Visio
+        connected = visio.connect()
+        st.session_state.visio_connected = connected
+        
+        if connected:
+            st.session_state.visio_documents = visio.get_open_documents()
+            
+            # Get default document and page if available
+            doc_index, page_index, found_valid = visio.get_default_document_page()
+            if found_valid:
+                st.session_state.selected_doc_index = doc_index
+                st.session_state.selected_page_index = page_index
+    
+    with visio_status_col1:
+        if st.session_state.visio_connected:
+            if st.session_state.visio_documents:
+                st.success(f"Visio: {len(st.session_state.visio_documents)} doc(s)")
+            else:
+                st.warning("No Visio documents open")
+        else:
+            st.error("Visio not connected")
+    
+    # Add a separator
+    st.markdown("---")
 
 def get_layout_columns():
     """Get column layout based on screen width"""
@@ -75,23 +132,7 @@ def delete_file(file_path):
         return False, f"Error deleting {file_path}: {str(e)}"
 
 def main():
-    # Inject JavaScript to track window width
-    st.markdown("""
-        <script>
-            // Send window width to Streamlit
-            function updateWidth() {
-                window.parent.postMessage({
-                    type: "streamlit:setComponentValue",
-                    value: window.innerWidth
-                }, "*");
-            }
-            
-            // Update on resize
-            window.addEventListener('resize', updateWidth);
-            // Initial update
-            updateWidth();
-        </script>
-    """, unsafe_allow_html=True)
+    # Window width tracking is now handled in app.py
     
     st.title("Visio Temporary File Cleaner")
     
@@ -105,39 +146,25 @@ def main():
         often hidden by default.
         """)
     
+    # Use the directory from session state with a fallback
+    if 'last_dir' in st.session_state:
+        scan_dir = st.session_state.last_dir
+    else:
+        # Fallback to a default directory
+        scan_dir = config.get("temp_cleaner.default_directory", "~/Documents")
+        scan_dir = os.path.expanduser(scan_dir)
+        # Store it in session state for next time
+        st.session_state.last_dir = scan_dir
+
     # Input for directory to scan - responsive layout
     is_mobile = st.session_state.get('browser_width', 1200) < 768
     
-    # Get default directory from config
-    default_dir = config.get("temp_cleaner.default_directory", "~/Documents")
-    default_dir = os.path.expanduser(default_dir)
+    # Warning for non-Windows systems
+    if platform.system() != "Windows":
+        st.warning("⚠️ Full functionality requires Windows with PowerShell. Limited functionality available on other systems.")
     
-    if is_mobile:
-        scan_dir = st.text_input(
-            "Directory:", 
-            value=default_dir,
-            help="Enter directory path to scan",
-            key="temp_cleaner_dir_mobile"
-        )
-        scan_btn = st.button("🔍 Scan", use_container_width=True, key="temp_cleaner_scan_btn_mobile")
-        
-        if platform.system() != "Windows":
-            st.warning("⚠️ Limited functionality on non-Windows systems.")
-    else:
-        # Create columns for larger screens
-        scan_dir = st.text_input(
-            "Directory to scan:", 
-            value=default_dir,
-            help="Enter the full path to the directory you want to scan for Visio temp files",
-            key="temp_cleaner_dir_desktop"
-        )
-        
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            scan_btn = st.button("🔍 Scan for Temp Files", use_container_width=True, key="temp_cleaner_scan_btn_desktop")
-        with col2:
-            if platform.system() != "Windows":
-                st.warning("⚠️ Full functionality requires Windows with PowerShell. Limited functionality available on other systems.")
+    # Scan button
+    scan_btn = st.button("🔍 Scan for Temp Files", use_container_width=is_mobile, key="temp_cleaner_scan_btn")
     
     # Handle scanning
     if scan_btn:

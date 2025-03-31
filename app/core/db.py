@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import threading
 from typing import List, Dict, Any, Optional
+import os
 
 class StencilDatabase:
     """SQLite database manager for caching stencil data"""
@@ -25,6 +26,8 @@ class StencilDatabase:
         if not self._conn:
             self._conn = sqlite3.connect(self.db_path)
             self._conn.row_factory = sqlite3.Row
+            # Enable foreign key constraints
+            self._conn.execute("PRAGMA foreign_keys = ON")
         return self._conn
     
     def _init_db(self):
@@ -69,6 +72,21 @@ class StencilDatabase:
                 ON shapes(name)
             """)
             # Added indexes for shapes table
+
+            # Add table for preset stencil directories
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS preset_directories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    is_active BOOLEAN DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_preset_directories_path
+                ON preset_directories(path)
+            """)
 
             # --- Add tables for Saved Searches and Favorites ---
             conn.execute("""
@@ -392,3 +410,74 @@ class StencilDatabase:
         if self._conn:
             self._conn.close()
             self._conn = None 
+
+    # --- Preset Directory Methods ---
+
+    def add_preset_directory(self, path: str, name: str = None) -> bool:
+        """Add a new preset directory."""
+        if name is None:
+            name = os.path.basename(path)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    "INSERT INTO preset_directories (path, name) VALUES (?, ?)",
+                    (path, name)
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                print(f"Directory '{path}' is already in presets.")
+                return False
+
+    def get_preset_directories(self) -> List[Dict[str, Any]]:
+        """Retrieve all preset directories."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "SELECT id, path, name, is_active, created_at FROM preset_directories ORDER BY created_at DESC"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_active_directory(self) -> Optional[Dict[str, Any]]:
+        """Get the currently active directory."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "SELECT id, path, name, created_at FROM preset_directories WHERE is_active = 1 LIMIT 1"
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def set_active_directory(self, directory_id: int) -> bool:
+        """Set a directory as active and deactivate others."""
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                # First deactivate all directories
+                conn.execute("UPDATE preset_directories SET is_active = 0")
+                # Then activate the selected directory
+                conn.execute(
+                    "UPDATE preset_directories SET is_active = 1 WHERE id = ?",
+                    (directory_id,)
+                )
+                conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error setting active directory: {e}")
+                return False
+
+    def remove_preset_directory(self, directory_id: int) -> bool:
+        """Remove a preset directory."""
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    "DELETE FROM preset_directories WHERE id = ?",
+                    (directory_id,)
+                )
+                conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error removing preset directory: {e}")
+                return False 
