@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core import config, directory_preset_manager, visio
 from app.core.db import StencilDatabase
+from app.core.components import render_shared_sidebar
 
 # Set page config - MUST be the first Streamlit command
 st.set_page_config(
@@ -19,43 +20,8 @@ st.set_page_config(
     layout="wide",
 )
 
-# Add the shared directory preset manager to the sidebar
-with st.sidebar:
-    st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
-    selected_directory = directory_preset_manager(key_prefix="p2_")
-    
-    # Add Visio integration section
-    st.markdown("<h3>Visio Integration</h3>", unsafe_allow_html=True)
-    visio_status_col1, visio_status_col2 = st.columns([3, 1])
-    
-    with visio_status_col2:
-        refresh_btn = st.button("🔄", key="p2_refresh_visio_btn")
-    
-    if refresh_btn or not st.session_state.visio_connected:
-        # Try to connect to Visio
-        connected = visio.connect()
-        st.session_state.visio_connected = connected
-        
-        if connected:
-            st.session_state.visio_documents = visio.get_open_documents()
-            
-            # Get default document and page if available
-            doc_index, page_index, found_valid = visio.get_default_document_page()
-            if found_valid:
-                st.session_state.selected_doc_index = doc_index
-                st.session_state.selected_page_index = page_index
-    
-    with visio_status_col1:
-        if st.session_state.visio_connected:
-            if st.session_state.visio_documents:
-                st.success(f"Visio: {len(st.session_state.visio_documents)} doc(s)")
-            else:
-                st.warning("No Visio documents open")
-        else:
-            st.error("Visio not connected")
-    
-    # Add a separator
-    st.markdown("---")
+# Use the shared sidebar component
+selected_directory = render_shared_sidebar(key_prefix="p2_")
 
 def get_layout_columns():
     """Get column layout based on screen width"""

@@ -108,17 +108,5 @@ st.markdown("""
     </script>
 """, unsafe_allow_html=True)
 
-# Add the shared directory preset manager to the sidebar
-# This will be available on all pages
-with st.sidebar:
-    st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
-    try:
-        selected_directory = directory_preset_manager(key_prefix="app_")
-    except Exception as e:
-        st.error(f"Error loading directory preset manager: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        selected_directory = st.session_state.last_dir
-    
-    # Add a separator
-    st.markdown("---")
+# The shared sidebar components are now handled by each page
+# No need to add them here

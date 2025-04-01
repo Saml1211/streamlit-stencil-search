@@ -12,110 +12,18 @@ from typing import List, Dict, Any, Optional
 # Add the parent directory to path so we can import from core
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core import scan_directory, parse_visio_stencil, config, get_shape_preview, visio, directory_preset_manager
+from app.core import config
+from app.core import scan_directory, parse_visio_stencil, get_shape_preview, visio, directory_preset_manager
 from app.core.db import StencilDatabase
+from app.core.components import render_shared_sidebar
 
-# Set page config (MUST be the first Streamlit command)
+# Set page config (MUST be the first Streamlit command after imports)
 st.set_page_config(
     page_title=config.get("app.title", "Visio Stencil Explorer"),
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# Custom CSS for improved UI
-st.markdown("""
-<style>
-    /* Overall theme and layout */
-    div.block-container {padding-top: 1rem;}
-    .stApp {
-        background-color: #121212;
-        color: white;
-    }
-    
-    /* Container styling */
-    div[data-testid="stVerticalBlock"] div[style] div[data-testid="stVerticalBlock"] {
-        background-color: #1e1e1e;
-        padding: 1rem;
-        border-radius: 4px;
-        border: 1px solid #333;
-        margin-bottom: 1rem;
-    }
-    
-    /* Header styling */
-    h1, h2, h3, h4, h5 {
-        color: white !important;
-    }
-    
-    /* Button styling */
-    .stButton button {
-        width: 100%;
-        border-radius: 0.25rem;
-        background-color: #333;
-        color: white;
-        border: none;
-    }
-    
-    .stButton button:hover {
-        background-color: #444;
-    }
-    
-    /* Search box styling */
-    [data-testid="stTextInput"] input {
-        background-color: #333;
-        color: white;
-        border-radius: 4px;
-        border: none;
-    }
-    
-    /* Checkbox styling */
-    [data-testid="stCheckbox"] {
-        color: white;
-    }
-    
-    /* Result styling */
-    .result-item {
-        padding: 0.5rem;
-        margin-bottom: 0.5rem;
-        border-radius: 4px;
-        border: 1px solid #444;
-        background-color: #2a2a2a;
-    }
-    
-    /* Better spacing for container headers */
-    div[data-testid="stVerticalBlock"] > div[style] > div[data-testid="stVerticalBlock"] > div:first-child {
-        margin-bottom: 1rem;
-    }
-    
-    /* Ensure text color is white for all elements */
-    .stMarkdown, .stText, caption, a, p, span {
-        color: white !important;
-    }
-    
-    /* Panel styling */
-    [data-testid="stSidebar"] {
-        background-color: #1e1e1e;
-    }
-    
-    /* Make expanders match theme */
-    [data-testid="stExpander"] {
-        background-color: #2a2a2a;
-        border-radius: 4px;
-    }
-    
-    /* Fix divider color */
-    hr {
-        border-color: #444;
-    }
-    
-    /* Info boxes */
-    div[data-testid="stAlert"] {
-        background-color: #2a2a2a;
-        color: white;
-        border: 1px solid #444;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 # Initialize session state
 if 'stencils' not in st.session_state:
@@ -154,9 +62,6 @@ if 'favorite_stencils' not in st.session_state:
     st.session_state.favorite_stencils = []
 if 'show_favorites' not in st.session_state:
     st.session_state.show_favorites = False
-# About section state
-if 'show_about' not in st.session_state:
-    st.session_state.show_about = False
 # Search options
 if 'show_filters' not in st.session_state:
     st.session_state.show_filters = False
@@ -176,6 +81,9 @@ if 'filter_min_shapes' not in st.session_state:
     st.session_state.filter_min_shapes = 0
 if 'filter_max_shapes' not in st.session_state:
     st.session_state.filter_max_shapes = 500
+
+# Use the shared sidebar component
+selected_directory = render_shared_sidebar(key_prefix="p1_")
 
 def background_scan(root_dir: str):
     """Background scanning function"""
@@ -330,10 +238,6 @@ def toggle_show_favorites():
     """Toggle the favorites view"""
     st.session_state.show_favorites = not st.session_state.show_favorites
 
-def toggle_about():
-    """Toggle the about section"""
-    st.session_state.show_about = not st.session_state.show_about
-
 def toggle_options():
     """Toggle search options visibility"""
     st.session_state.show_filters = not st.session_state.show_filters
@@ -371,37 +275,39 @@ def search_stencils_db(search_term: str, filters: dict) -> List[Dict[str, Any]]:
         st.code(traceback.format_exc())
         return []
 
+# Initialize session state variables if they don't exist
+def initialize_session_state():
+    if 'current_search_term' not in st.session_state:
+        st.session_state.current_search_term = ""
+
+# Callback to update the main search term state
+def update_search_term():
+    st.session_state.current_search_term = st.session_state.search_input_widget
+
 def main():
+    initialize_session_state()
     # Page title
     st.title("Visio Stencil Explorer")
     
-    # Page description and About button
-    title_row = st.columns([6, 1])
-    with title_row[0]:
-        st.markdown("Search for shapes and import them into Visio.")
+    # Page description and About section
+    st.markdown("Search for shapes and import them into Visio.")
     
-    with title_row[1]:
-        about_btn = st.button("About", key="about_btn")
-        if about_btn:
-            toggle_about()
-    
-    # Show About section if enabled
-    if st.session_state.show_about:
-        with st.expander("About Visio Stencil Explorer", expanded=True):
-            st.markdown("""
-            ### Visio Stencil Explorer
-            
-            This application allows you to search for shapes within Visio stencil files,
-            without having Visio open. You can:
-            
-            - Search for shapes by name
-            - Preview shapes
-            - Add shapes to a collection
-            - Import shapes directly into Visio
-            - Save favorite stencils for quick access
-            
-            Use the search options to filter and find exactly what you need.
-            """)
+    # About section using expander component like in the Temp File Cleaner page
+    with st.expander("About Visio Stencil Explorer"):
+        st.markdown("""
+        ### Visio Stencil Explorer
+        
+        This application allows you to search for shapes within Visio stencil files,
+        without having Visio open. You can:
+        
+        - Search for shapes by name
+        - Preview shapes
+        - Add shapes to a collection
+        - Import shapes directly into Visio
+        - Save favorite stencils for quick access
+        
+        Use the search options to filter and find exactly what you need.
+        """)
     
     # Create two main columns for better layout
     search_col, workspace_col = st.columns([2, 1])
@@ -424,7 +330,14 @@ def main():
             # Search bar with button - Primary action at the top
             search_row = st.columns([5, 1])
             with search_row[0]:
-                search_term = st.text_input("Search for shapes", key="search_input", label_visibility="collapsed")
+                # Use the new key and on_change callback, value from current_search_term
+                st.text_input("Search for shapes", 
+                              key="search_input_widget", 
+                              value=st.session_state.get('current_search_term', ''),
+                              on_change=update_search_term,
+                              label_visibility="collapsed")
+                # Get the active search term from session state
+                search_term = st.session_state.current_search_term 
             with search_row[1]:
                 search_button = st.button("Search", key="search_button", use_container_width=True)
             
@@ -523,7 +436,9 @@ def main():
                     col_idx = i % 5
                     with history_cols[col_idx]:
                         if st.button(term, key=f"history_{i}", use_container_width=True):
-                            # Use this search term
+                            # Use this search term - update current_search_term
+                            st.session_state.current_search_term = term
+                            
                             filters = {
                                 'date_start': st.session_state.filter_date_start,
                                 'date_end': st.session_state.filter_date_end,
@@ -532,9 +447,9 @@ def main():
                                 'min_shapes': st.session_state.filter_min_shapes,
                                 'max_shapes': st.session_state.filter_max_shapes
                             }
-                            st.session_state.search_results = search_stencils_db(term, filters)
-                            # Update the search input
-                            st.session_state.search_input = term
+                            # Perform search immediately after setting term
+                            st.session_state.search_results = search_stencils_db(st.session_state.current_search_term, filters)
+                            # Rerun to update the input field display and results
                             st.rerun()
             
             # Tools section - Moved to bottom of search container

@@ -3,6 +3,7 @@ import streamlit as st
 from typing import Optional, Dict, List
 from .db import StencilDatabase
 from .config import config
+from . import visio
 
 def directory_preset_manager(container=st.sidebar, key_prefix="") -> str:
     """
@@ -122,3 +123,54 @@ def directory_preset_manager(container=st.sidebar, key_prefix="") -> str:
     
     db.close()
     return directory 
+
+def render_shared_sidebar(key_prefix="") -> str:
+    """
+    Render the shared sidebar components including directory preset manager
+    and Visio integration status.
+    
+    Args:
+        key_prefix: Prefix to add to all keys to ensure uniqueness (default: "")
+        
+    Returns:
+        str: The currently selected directory path
+    """
+    with st.sidebar:
+        # Directory preset manager
+        st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
+        selected_directory = directory_preset_manager(key_prefix=key_prefix)
+        
+        # Add Visio integration section
+        st.markdown("<h3>Visio Integration</h3>", unsafe_allow_html=True)
+        visio_status_col1, visio_status_col2 = st.columns([3, 1])
+        
+        with visio_status_col2:
+            refresh_btn = st.button("🔄", key=f"{key_prefix}refresh_visio_btn")
+        
+        if refresh_btn or not st.session_state.get('visio_connected', False):
+            # Try to connect to Visio
+            connected = visio.connect()
+            st.session_state.visio_connected = connected
+            
+            if connected:
+                st.session_state.visio_documents = visio.get_open_documents()
+                
+                # Get default document and page if available
+                doc_index, page_index, found_valid = visio.get_default_document_page()
+                if found_valid:
+                    st.session_state.selected_doc_index = doc_index
+                    st.session_state.selected_page_index = page_index
+        
+        with visio_status_col1:
+            if st.session_state.get('visio_connected', False):
+                if st.session_state.get('visio_documents', []):
+                    st.success(f"Visio: {len(st.session_state.visio_documents)} doc(s)")
+                else:
+                    st.warning("No Visio documents open")
+            else:
+                st.error("Visio not connected")
+        
+        # Add a separator
+        st.markdown("---")
+        
+        return selected_directory 

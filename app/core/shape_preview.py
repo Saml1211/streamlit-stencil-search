@@ -5,11 +5,12 @@ import io
 import re
 from matplotlib.path import Path
 
-def get_shape_preview(shape_name, size=150, bg_color="#f5f5f5"):
+def get_shape_preview(stencil_path, shape_name, size=150, bg_color="#f5f5f5"):
     """
     Generate a preview image for a shape based on its name
     
     Args:
+        stencil_path (str): Path to the stencil file
         shape_name (str): Name of the shape
         size (int): Size of the square image in pixels
         bg_color (str): Background color (hex)
@@ -18,6 +19,9 @@ def get_shape_preview(shape_name, size=150, bg_color="#f5f5f5"):
         bytes: PNG image as bytes
     """
     # Create figure with transparent background
+    if isinstance(size, str):
+        size = 150  # Default to 150 if size is a string
+    
     fig, ax = plt.subplots(figsize=(size/100, size/100), dpi=100)
     ax.set_aspect('equal')
     ax.set_xlim(0, 1)
