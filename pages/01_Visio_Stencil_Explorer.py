@@ -327,21 +327,52 @@ def main():
         with st.container(border=True):
             st.write("### Search")
             
-            # Search bar with button - Primary action at the top
-            search_row = st.columns([5, 1])
-            with search_row[0]:
-                # Use the new key and on_change callback, value from current_search_term
-                st.text_input("Search for shapes", 
-                              key="search_input_widget", 
-                              value=st.session_state.get('current_search_term', ''),
-                              on_change=update_search_term,
-                              label_visibility="collapsed")
-                # Get the active search term from session state
-                search_term = st.session_state.current_search_term 
-            with search_row[1]:
-                search_button = st.button("Search", key="search_button", use_container_width=True)
+            # Wrap search input and button in a form
+            with st.form(key="search_form"):
+                # Search bar with button - Primary action at the top
+                search_row = st.columns([5, 1])
+                with search_row[0]:
+                    # Use the new key and on_change callback, value from current_search_term
+                    st.text_input("Search for shapes", 
+                                  key="search_input_widget", 
+                                  value=st.session_state.get('current_search_term', ''),
+                                  on_change=update_search_term,
+                                  label_visibility="collapsed")
+                    # Get the active search term from session state AFTER form submission
+                    # search_term = st.session_state.current_search_term # Moved down
+                with search_row[1]:
+                    # This button now submits the form
+                    search_button = st.form_submit_button("Search", use_container_width=True)
+                
+                # This logic now runs when the form is submitted (button click or Enter)
+                if search_button:
+                    # Retrieve the search term from session state *after* submission
+                    search_term = st.session_state.current_search_term 
+                    if search_term: # Only search if term is not empty
+                        # Add term to search history if it's not there already
+                        if search_term not in st.session_state.search_history:
+                            st.session_state.search_history.append(search_term)
+                            # Keep history to the most recent 10 items
+                            if len(st.session_state.search_history) > 10:
+                                st.session_state.search_history = st.session_state.search_history[-10:]
+                        
+                        # Get filters from session state
+                        filters = {
+                            'date_start': st.session_state.filter_date_start,
+                            'date_end': st.session_state.filter_date_end,
+                            'min_size': st.session_state.filter_min_size,
+                            'max_size': st.session_state.filter_max_size,
+                            'min_shapes': st.session_state.filter_min_shapes,
+                            'max_shapes': st.session_state.filter_max_shapes,
+                            'show_favorites': st.session_state.get('show_favorites_toggle', False) # Get favorite filter state
+                        }
+                        
+                        # Perform the search
+                        st.session_state.search_results = search_stencils_db(search_term, filters)
+                        # Rerun needed to display results if search happens within the form context
+                        st.rerun() 
             
-            # Search options toggle - Directly below search for easy access
+            # Search options toggle - Remains outside the form
             options_row = st.columns([5, 1])
             with options_row[0]:
                 st.caption("Need to filter results? Use search options.")
@@ -457,41 +488,19 @@ def main():
             update_btn = st.button("Update Cache", key="update_btn", use_container_width=True,
                                   help="Scan directories and update the stencil cache")
             
-            # Handle scanning
+            # Handle scanning - Remains outside the form
             if update_btn and not st.session_state.background_scan_running:
                 if not os.path.exists(root_dir):
                     st.error(f"Directory does not exist: {root_dir}")
                 else:
                     background_scan(root_dir)
             
-            # Show scan progress if running
+            # Show scan progress if running - Remains outside the form
             if st.session_state.background_scan_running:
                 st.progress(st.session_state.scan_progress / 100)
                 st.caption(st.session_state.scan_status)
         
-        # Handle search
-        if search_button and search_term:
-            # Add term to search history if it's not there already
-            if search_term not in st.session_state.search_history:
-                st.session_state.search_history.append(search_term)
-                # Keep history to the most recent 10 items
-                if len(st.session_state.search_history) > 10:
-                    st.session_state.search_history = st.session_state.search_history[-10:]
-            
-            # Get filters from session state
-            filters = {
-                'date_start': st.session_state.filter_date_start,
-                'date_end': st.session_state.filter_date_end,
-                'min_size': st.session_state.filter_min_size,
-                'max_size': st.session_state.filter_max_size,
-                'min_shapes': st.session_state.filter_min_shapes,
-                'max_shapes': st.session_state.filter_max_shapes
-            }
-            
-            # Perform the search
-            st.session_state.search_results = search_stencils_db(search_term, filters)
-        
-        # Display search results
+        # Display search results - Remains outside the form
         if st.session_state.search_results:
             with st.container(border=True):
                 st.write(f"### Results ({len(st.session_state.search_results)} shapes found)")

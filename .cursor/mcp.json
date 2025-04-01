@@ -1,0 +1,82 @@
+{
+    "mcpServers": {
+      "server-sequential-thinking": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@smithery/cli@latest",
+          "run",
+          "@smithery-ai/server-sequential-thinking",
+          "--key",
+          "21c4fd21-fa7a-4aa4-9f17-5aaa1eb2ebc8"
+        ]
+      },
+      "puppeteer": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-puppeteer"
+        ]
+      },
+      "Knowledge Graph": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@smithery/cli@latest",
+          "run",
+          "@itseasy21/mcp-knowledge-graph",
+          "--config",
+          "\"{}\""
+        ]
+      },
+      "github.com/pashpashpash/perplexity-mcp": {
+        "command": "node",
+        "args": [
+          "/Users/samlyndon/Documents/Cline/MCP/perplexity-mcp/build/index.js"
+        ],
+        "env": {
+          "PERPLEXITY_API_KEY": "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"
+        },
+        "disabled": false,
+        "autoApprove": [
+          "search"
+        ],
+        "alwaysAllow": [
+          "search",
+          "get_documentation",
+          "chat_perplexity"
+        ]
+      },
+      "github.com/pashpashpash/mcp-taskmanager": {
+        "command": "node",
+        "args": [
+          "/Users/samlyndon/Documents/Cline/MCP/mcp-taskmanager/dist/index.js"
+        ],
+        "env": {
+          "TASK_MANAGER_FILE_PATH": "/Users/samlyndon/Documents/tasks.json"
+        },
+        "disabled": false,
+        "autoApprove": [
+          "list_requests",
+          "request_planning",
+          "get_next_task",
+          "mark_task_done",
+          "add_tasks_to_request",
+          "approve_task_completion"
+        ]
+      },
+      "github.com/pashpashpash/mcp-notion-server": {
+        "command": "node",
+        "args": [
+          "/Users/samlyndon/Documents/Cline/MCP/mcp-notion-server/build/index.js"
+        ],
+        "env": {
+          "NOTION_API_TOKEN": "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"
+        },
+        "disabled": false,
+        "autoApprove": [
+          "notion_retrieve_bot_user"
+        ]
+      }
+    }
+  } 

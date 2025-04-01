@@ -764,6 +764,7 @@ class StencilDatabase:
         Returns:
             List of matching shapes with their stencil information
         """
+        print(f"--- search_shapes called with term: '{search_term}', use_fts: {use_fts} ---")
         results = []
         with self._lock:
             conn = self._get_conn()
@@ -771,19 +772,24 @@ class StencilDatabase:
             try:
                 # Check if FTS table exists and has data
                 has_fts = False
+                fts_count = 0
                 try:
                     fts_check = conn.execute("SELECT COUNT(*) FROM shapes_fts").fetchone()
-                    has_fts = fts_check is not None and fts_check[0] > 0
-                except sqlite3.OperationalError:
+                    if fts_check is not None:
+                        fts_count = fts_check[0]
+                        has_fts = fts_count > 0
+                    print(f"FTS Check: shapes_fts count = {fts_count}, has_fts = {has_fts}")
+                except sqlite3.OperationalError as e:
                     # Table doesn't exist or has issues
                     has_fts = False
-                    print("FTS table not available. Falling back to LIKE search.")
+                    print(f"FTS table check error: {e}. Falling back to LIKE search.")
                 
                 # Determine whether to use FTS or LIKE search
                 if use_fts and has_fts and search_term:
+                    print("Using FTS search path.")
                     # For FTS search, use the virtual table with proper syntax
                     base_query = """
-                        SELECT s.id, s.name as shape_name, st.name as stencil_name, st.path as stencil_path
+                        SELECT s.id, s.name as shape_name, st.name as stencil_name, st.path as stencil_path, fts.rank
                         FROM shapes_fts fts
                         JOIN shapes s ON fts.rowid = s.id
                         JOIN stencils st ON s.stencil_path = st.path
@@ -794,6 +800,7 @@ class StencilDatabase:
                     search_param = f"{search_term}*"
                     params = [search_param]
                 else:
+                    print(f"Using LIKE search path. (use_fts={use_fts}, has_fts={has_fts}, search_term='{search_term}')")
                     # Fallback to traditional LIKE for simple searches or empty search
                     base_query = """
                         SELECT s.id, s.name as shape_name, st.name as stencil_name, st.path as stencil_path
@@ -804,44 +811,53 @@ class StencilDatabase:
                     params = [f"%{search_term}%"]
                 
                 # Add filters if provided
+                filter_clauses = []
                 if filters:
                     if filters.get('date_start'):
-                        base_query += " AND st.last_modified >= ?"
+                        filter_clauses.append("st.last_modified >= ?")
                         params.append(filters['date_start'].isoformat())
                         
                     if filters.get('date_end'):
-                        # Add time component for inclusive end date
                         end_date = filters['date_end'] + timedelta(days=1)
-                        base_query += " AND st.last_modified < ?"
+                        filter_clauses.append("st.last_modified < ?")
                         params.append(end_date.isoformat())
                         
                     if filters.get('min_size') is not None and filters['min_size'] > 0:
-                        base_query += " AND st.file_size >= ?"
+                        filter_clauses.append("st.file_size >= ?")
                         params.append(filters['min_size'])
                         
                     if filters.get('max_size') is not None and filters['max_size'] < (50 * 1024 * 1024):
-                        base_query += " AND st.file_size <= ?"
+                        filter_clauses.append("st.file_size <= ?")
                         params.append(filters['max_size'])
                         
                     if filters.get('min_shapes') is not None and filters['min_shapes'] > 0:
-                        base_query += " AND st.shape_count >= ?"
+                        filter_clauses.append("st.shape_count >= ?")
                         params.append(filters['min_shapes'])
                         
                     if filters.get('max_shapes') is not None and filters['max_shapes'] < 500:
-                        base_query += " AND st.shape_count <= ?"
+                        filter_clauses.append("st.shape_count <= ?")
                         params.append(filters['max_shapes'])
+
+                if filter_clauses:
+                     base_query += " AND " + " AND ".join(filter_clauses)
                 
                 # Add ordering - FTS provides relevance ranking
                 if use_fts and has_fts and search_term:
-                    base_query += " ORDER BY rank, stencil_name, shape_name LIMIT ?"
+                    base_query += " ORDER BY rank DESC, stencil_name, shape_name LIMIT ?"
                 else:
                     base_query += " ORDER BY stencil_name, shape_name LIMIT ?"
                 
                 params.append(limit)
                 
+                print(f"Executing Query: {base_query}")
+                print(f"Parameters: {params}")
+                
                 cursor = conn.execute(base_query, params)
                 
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                print(f"Query returned {len(rows)} rows.")
+
+                for row in rows:
                     highlight_start = -1
                     highlight_end = -1
                     
@@ -869,11 +885,15 @@ class StencilDatabase:
                     try:
                         # Rebuild FTS index and retry with LIKE search
                         self.rebuild_fts_index()
+                        print("Retrying search with LIKE after FTS rebuild.")
                         # Retry with LIKE search (no FTS)
                         return self.search_shapes(search_term, filters, use_fts=False, limit=limit)
                     except Exception as recovery_error:
                         print(f"Recovery failed: {recovery_error}")
             except Exception as e:
                 print(f"Unexpected error in search_shapes: {e}")
+                import traceback
+                print(traceback.format_exc())
                 
+            print(f"--- search_shapes finished, returning {len(results)} results ---")
             return results 
