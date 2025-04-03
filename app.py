@@ -3,7 +3,19 @@
 # shown in the sidebar, ensuring this script itself is not listed.
 # It automatically redirects to the Visio Stencil Explorer page.
 
+# IMPORTANT: Import streamlit first and call set_page_config immediately
+# before any other streamlit commands
 import streamlit as st
+
+# Set a default page config here that must be the first Streamlit command
+st.set_page_config(
+    page_title="Visio Stencil Explorer",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Now import other modules and continue with initialization
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 from app.core import config, visio
 from app.core.components import directory_preset_manager
@@ -17,18 +29,18 @@ def initialize_database():
     print("\n" + "="*50)
     print("INITIALIZING DATABASE")
     print("="*50)
-    
+
     db = StencilDatabase()
     try:
         # The integrity check happens automatically during initialization
-        
+
         # Attempt to rebuild the FTS index - this is a no-op if already built
         rebuild_result = db.rebuild_fts_index()
         if rebuild_result:
             print("FTS index initialized successfully")
         else:
             print("FTS index initialization failed - will use standard search")
-            
+
         # Run a quick count to verify database is working
         try:
             conn = db._get_conn()
@@ -43,7 +55,7 @@ def initialize_database():
         print(traceback.format_exc())
     finally:
         db.close()
-    
+
     print("="*50)
     print("DATABASE INITIALIZATION COMPLETE")
     print("="*50 + "\n")
@@ -52,8 +64,8 @@ def initialize_database():
 # Initialize the database at startup
 _ = initialize_database()
 
-# Note: We don't set page_config here because it will be set in the page that's loaded
-# Each page in the pages/ directory has its own st.set_page_config() call
+# Page config is already set at the top of the file
+# No need to set it again here
 
 # Initialize session state values needed by all pages BEFORE any UI is created
 if 'last_dir' not in st.session_state:
@@ -80,6 +92,7 @@ pg = st.navigation(
         st.Page("pages/01_Visio_Stencil_Explorer.py", title="Visio Stencil Explorer", icon="🔍"),
         st.Page("pages/02_Temp_File_Cleaner.py", title="Temp File Cleaner", icon="🧹"),
         st.Page("pages/03_Stencil_Health.py", title="Stencil Health", icon="🧪"),
+        st.Page("pages/04_Visio_Control.py", title="Visio Control", icon="🎮"),
     ]
 )
 
@@ -87,10 +100,10 @@ pg = st.navigation(
 # No UI code should come after this line
 pg.run()
 
-# Now that the page has run and set_page_config has been called, 
+# Now that the page has run and set_page_config has been called,
 # we can add our own UI elements
 
-# Inject JavaScript to track window width for responsive design
+# Inject JavaScript to track window width for responsive design and CSS for consistent container heights
 st.markdown("""
     <script>
         // Send window width to Streamlit
@@ -100,12 +113,30 @@ st.markdown("""
                 value: window.innerWidth
             }, "*");
         }
-        
+
         // Update on resize
         window.addEventListener('resize', updateWidth);
         // Initial update
         updateWidth();
     </script>
+
+    <style>
+        /* Set standard height for all containers with borders */
+        [data-testid="stCaptionContainer"] > div:has(> div[data-testid="stVerticalBlock"]) > div:has(> div[data-baseweb="card"]) {
+            min-height: 300px !important;
+        }
+
+        /* Make sure content scrolls if it exceeds the container height */
+        [data-testid="stVerticalBlock"] > div:has(> div[data-baseweb="card"]) > div {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        /* Ensure sidebar containers have consistent height too */
+        .sidebar .element-container:has(> div[data-testid="stVerticalBlock"]) > div:has(> div[data-baseweb="card"]) {
+            min-height: 150px !important;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
 # The shared sidebar components are now handled by each page
