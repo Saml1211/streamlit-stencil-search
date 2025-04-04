@@ -20,6 +20,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 from app.core import config, visio
 from app.core.components import directory_preset_manager
 from app.core.db import StencilDatabase
+from app.core.custom_styles import inject_custom_css
 
 # Initialize the database and rebuild the FTS index if needed
 @st.cache_resource
@@ -102,6 +103,9 @@ pg.run()
 
 # Now that the page has run and set_page_config has been called,
 # we can add our own UI elements
+
+# Apply custom CSS styles for improved UI layout and spacing
+inject_custom_css()
 
 # Inject JavaScript to track window width for responsive design and CSS for consistent container heights
 st.markdown("""

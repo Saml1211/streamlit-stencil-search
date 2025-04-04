@@ -16,6 +16,7 @@ from app.core import config
 from app.core import scan_directory, parse_visio_stencil, get_shape_preview, visio, directory_preset_manager
 from app.core.db import StencilDatabase
 from app.core.components import render_shared_sidebar
+from app.core.custom_styles import inject_spacer
 
 # Page config is now set in app.py to avoid the 'set_page_config must be first' error
 # st.set_page_config(
@@ -422,8 +423,8 @@ def main():
         with st.container(border=True):
             st.write("### Search")
 
-            # Search bar with button - Primary action at the top
-            search_row = st.columns([5, 1])
+            # Search bar with buttons - Primary action at the top
+            search_row = st.columns([5, 2, 1, 1])
             with search_row[0]:
                 # Use the new key and on_change callback, value from current_search_term
                 search_input = st.text_input("Search for shapes",
@@ -439,21 +440,43 @@ def main():
             with search_row[1]:
                 # This button triggers the search
                 search_button = st.button("Search", use_container_width=True)
+            with search_row[2]:
+                # Options button at half width
+                options_btn = st.button("Options", key="options_btn", use_container_width=True)
+            with search_row[3]:
+                # New refresh button
+                refresh_btn = st.button("Refresh", key="refresh_btn", use_container_width=True)
 
             if search_button:
                 perform_search()
+            if options_btn:
+                toggle_options()
+            if refresh_btn:
+                # Refresh the search results if there's an active search
+                if st.session_state.get('current_search_term', ''):
+                    perform_search()
+                # Also refresh Visio connection
+                with st.spinner("Refreshing Visio connection..."):
+                    refresh_visio_connection()
 
-            # Search options toggle - Remains outside the form
-            options_row = st.columns([5, 1])
-            with options_row[0]:
-                st.caption("Need to filter results? Use search options.")
-            with options_row[1]:
-                options_btn = st.button("Options", key="options_btn")
-                if options_btn:
-                    toggle_options()
+            # Search options caption
+            st.caption("Need to filter results? Use the Options button.")
 
             # Search options - When expanded
             if st.session_state.show_filters:
+                # Add CSS to ensure sliders in the expander span full width
+                st.markdown("""
+                <style>
+                /* Ensure sliders in the search options expander span full width */
+                div[data-testid="stExpander"] div[data-testid="stSlider"] {
+                    width: 100% !important;
+                }
+                div[data-testid="stExpander"] div[data-testid="stSlider"] > div {
+                    width: 100% !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
                 with st.expander("Search Options", expanded=True):
                     # Search options in two columns
                     options_col1, options_col2 = st.columns(2)
@@ -477,11 +500,18 @@ def main():
                             elif not visio_has_docs:
                                 search_doc_tooltip = "Open a document in Visio first to enable this option"
 
-                        st.checkbox("Search in Current Document",
+                        search_in_doc = st.checkbox("Search in Current Document",
                             value=st.session_state.search_in_document,
-                            key="search_in_document_toggle",
+                            key="search_in_document",
                             help=search_doc_tooltip,
                             disabled=search_doc_disabled)
+
+                        # Update session state and trigger search if changed
+                        if search_in_doc != st.session_state.get('search_in_document_last_state', False):
+                            st.session_state.search_in_document_last_state = search_in_doc
+                            # Trigger a new search if there's an active search term
+                            if st.session_state.get('current_search_term', ''):
+                                perform_search()
 
                     with options_col2:
                         # Search method options
@@ -498,6 +528,8 @@ def main():
 
                     # Date filters
                     st.write("##### Date Filters")
+                    # Add spacing before date inputs for better readability
+                    inject_spacer(10)
                     date_col1, date_col2 = st.columns(2)
                     with date_col1:
                         st.date_input("From Date",
@@ -509,30 +541,99 @@ def main():
                                 key="filter_date_end",
                                 value=None,
                                 help="Filter stencils by modification date (ending at)")
+                    # Add spacing after date inputs
+                    inject_spacer(10)
 
                     # Size and shape count filters
                     st.write("##### Size and Shape Filters")
-                    # File size filters
-                    st.slider("File Size (KB)",
+
+                    # Add CSS to fix slider appearance and make them different widths
+                    st.markdown("""
+                    <style>
+                    /* Hide the default slider values that appear on the right side */
+                    div[data-testid="stSlider"] > div > div:last-child {
+                        display: none;
+                    }
+
+                    /* File Size slider - make it shorter */
+                    [data-testid="stSlider"][aria-labelledby*="file_size_range"] {
+                        width: 75% !important;
+                    }
+
+                    /* Shape Count slider - make it longer */
+                    [data-testid="stSlider"][aria-labelledby*="shape_count_range"] {
+                        width: 100% !important;
+                    }
+
+                    /* Add custom labels for min/max values */
+                    [data-testid="stSlider"][aria-labelledby*="file_size_range"]::before {
+                        content: "0";
+                        position: absolute;
+                        bottom: 0;
+                        left: 0;
+                        font-size: 14px;
+                        color: rgba(255, 255, 255, 0.7);
+                    }
+                    [data-testid="stSlider"][aria-labelledby*="file_size_range"]::after {
+                        content: "50";
+                        position: absolute;
+                        bottom: 0;
+                        right: 0;
+                        font-size: 14px;
+                        color: rgba(255, 255, 255, 0.7);
+                    }
+                    [data-testid="stSlider"][aria-labelledby*="shape_count_range"]::before {
+                        content: "0";
+                        position: absolute;
+                        bottom: 0;
+                        left: 0;
+                        font-size: 14px;
+                        color: rgba(255, 255, 255, 0.7);
+                    }
+                    [data-testid="stSlider"][aria-labelledby*="shape_count_range"]::after {
+                        content: "500";
+                        position: absolute;
+                        bottom: 0;
+                        right: 0;
+                        font-size: 14px;
+                        color: rgba(255, 255, 255, 0.7);
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+
+                    # File Size slider
+                    st.slider("File Size (MB)",
                             min_value=0,
-                            max_value=int(50 * 1024), # 50 MB in KB
-                            value=(0, int(50 * 1024)),
+                            max_value=50, # 50 MB
+                            value=(0, 50),
+                            step=1,
+                            format="%d", # Format as integer without leading zeros
                             key="file_size_range",
-                            help="Filter stencils by file size")
+                            label_visibility="visible",
+                            help="Filter stencils by file size in megabytes")
 
                     # Update individual min/max size for the filter dict
-                    # Convert KB to bytes
+                    # Convert MB to bytes
                     if 'file_size_range' in st.session_state:
-                        st.session_state.filter_min_size = st.session_state.file_size_range[0] * 1024
-                        st.session_state.filter_max_size = st.session_state.file_size_range[1] * 1024
+                        st.session_state.filter_min_size = st.session_state.file_size_range[0] * 1024 * 1024
+                        st.session_state.filter_max_size = st.session_state.file_size_range[1] * 1024 * 1024
 
-                    # Shape count filters
+                    # Add spacing between sliders
+                    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
+                    # Shape Count slider
                     st.slider("Shape Count",
                             min_value=0,
                             max_value=500,
                             value=(0, 500),
+                            step=1,
+                            format="%d", # Format as integer without leading zeros
                             key="shape_count_range",
+                            label_visibility="visible",
                             help="Filter stencils by number of shapes")
+
+                    # Add spacing after sliders
+                    inject_spacer(10)
 
                     # Update individual min/max shape count for the filter dict
                     if 'shape_count_range' in st.session_state:
@@ -553,32 +654,57 @@ def main():
             # Recent searches - More prominent placement
             if st.session_state.search_history:
                 st.write("##### Recent Searches")
-                history_cols = st.columns(min(5, len(st.session_state.search_history)))
 
-                for i, term in enumerate(reversed(st.session_state.search_history)):
-                    col_idx = i % 5
-                    with history_cols[col_idx]:
-                        if st.button(term, key=f"history_{i}", use_container_width=True):
-                            # Use this search term - update current_search_term
-                            st.session_state.current_search_term = term
+                # Add custom CSS for consistent spacing in search history buttons
+                st.markdown("""
+                <style>
+                    /* Add consistent spacing to search history buttons */
+                    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+                        padding: 0 5px;
+                    }
+                    /* Add margin to the buttons */
+                    div[data-testid="stHorizontalBlock"] button {
+                        margin: 5px 0;
+                    }
+                </style>
+                """, unsafe_allow_html=True)
 
-                            filters = {
-                                'date_start': st.session_state.filter_date_start,
-                                'date_end': st.session_state.filter_date_end,
-                                'min_size': st.session_state.filter_min_size,
-                                'max_size': st.session_state.filter_max_size,
-                                'min_shapes': st.session_state.filter_min_shapes,
-                                'max_shapes': st.session_state.filter_max_shapes
-                            }
-                            # Perform search immediately after setting term
-                            st.session_state.search_results = search_stencils_db(st.session_state.current_search_term, filters)
-                            # Rerun to update the input field display and results
-                            st.rerun()
+                # Add spacing before search history
+                inject_spacer(10)
+
+                # Use a container to ensure consistent spacing
+                with st.container():
+                    history_cols = st.columns(min(5, len(st.session_state.search_history)))
+                    for i, term in enumerate(reversed(st.session_state.search_history)):
+                        col_idx = i % 5
+                        with history_cols[col_idx]:
+                            if st.button(term, key=f"history_{i}", use_container_width=True):
+                                # Use this search term - update current_search_term
+                                st.session_state.current_search_term = term
+
+                                filters = {
+                                    'date_start': st.session_state.filter_date_start,
+                                    'date_end': st.session_state.filter_date_end,
+                                    'min_size': st.session_state.filter_min_size,
+                                    'max_size': st.session_state.filter_max_size,
+                                    'min_shapes': st.session_state.filter_min_shapes,
+                                    'max_shapes': st.session_state.filter_max_shapes
+                                }
+                                # Perform search immediately after setting term
+                                st.session_state.search_results = search_stencils_db(st.session_state.current_search_term, filters)
+                                # Rerun to update the input field display and results
+                                st.rerun()
+
+                # Add spacing after search history
+                inject_spacer(10)
 
             # Tools section - Moved to bottom of search container
             st.write("##### Tools")
             update_btn = st.button("Update Cache", key="update_btn", use_container_width=True,
                                   help="Scan directories and update the stencil cache")
+
+            # Add spacing between Update Cache button and scanning status
+            inject_spacer(15)
 
             # Handle scanning - Remains outside the form
             if update_btn and not st.session_state.background_scan_running:
@@ -591,6 +717,8 @@ def main():
             if st.session_state.background_scan_running:
                 st.progress(st.session_state.scan_progress / 100)
                 st.caption(st.session_state.scan_status)
+                # Add spacer after scanning progress
+                inject_spacer(20)
 
         # Display search results - Remains outside the form
         if st.session_state.search_results:
@@ -685,8 +813,9 @@ def main():
                 for idx, item in enumerate(st.session_state.shape_collection):
                     st.markdown(f"**{item['name']}**")
                     st.caption(item['stencil_name'])
-                    col1, col2 = st.columns([5, 1])
-                    with col2:
+                    # Use a single column for the remove button to avoid unused variable warnings
+                    _, button_col = st.columns([5, 1])
+                    with button_col:
                         st.button("🗑️", key=f"remove_{idx}", help="Remove from collection",
                                 on_click=remove_from_collection, args=(idx,))
                     st.divider()
@@ -720,35 +849,37 @@ def main():
                 if st.session_state.visio_documents:
                     st.success(f"Connected to Visio ({len(st.session_state.visio_documents)} document(s) open)")
 
-                    # If multiple documents are open, show a document selector
-                    if len(st.session_state.visio_documents) > 1:
-                        doc_options = {f"{doc['name']}": doc['index'] for doc in st.session_state.visio_documents}
-                        selected_doc_name = st.selectbox(
-                            "Select Visio Document",
-                            options=list(doc_options.keys()),
-                            index=0,
-                            key="doc_selector"
-                        )
-                        selected_doc_index = doc_options[selected_doc_name]
+                    # Always show document selector when documents are available
+                    doc_options = {f"{doc['name']}": doc['index'] for doc in st.session_state.visio_documents}
 
-                        # Update session state if changed
-                        if selected_doc_index != st.session_state.selected_doc_index:
-                            st.session_state.selected_doc_index = selected_doc_index
-                            # When document changes, reset page selection
-                            st.session_state.selected_page_index = 1
-                            st.rerun()
-                    else:
-                        # Single document, use it automatically
-                        selected_doc_index = st.session_state.selected_doc_index
+                    # Find the index of the currently selected document in the options list
+                    current_doc_index = 0
+                    for i, (_, idx) in enumerate(doc_options.items()):
+                        if idx == st.session_state.selected_doc_index:
+                            current_doc_index = i
+                            break
+
+                    selected_doc_name = st.selectbox(
+                        "Select Visio Document",
+                        options=list(doc_options.keys()),
+                        index=current_doc_index,
+                        key="doc_selector"
+                    )
+                    selected_doc_index = doc_options[selected_doc_name]
+
+                    # Update session state if changed
+                    if selected_doc_index != st.session_state.selected_doc_index:
+                        st.session_state.selected_doc_index = selected_doc_index
+                        # When document changes, reset page selection
+                        st.session_state.selected_page_index = 1
+                        st.rerun()
 
                     # Get pages for the selected document
                     pages = visio.get_pages_in_document(selected_doc_index)
 
                     if pages:
                         # Show page selector
-                        page_options = {f"{page['name']}": page['index'] for page in pages}
-
-                        # Add "is_schematic" indicator to page names
+                        # Create labeled page options directly without an intermediate variable
                         labeled_page_options = {}
                         for page in pages:
                             label = f"{page['name']}"
@@ -792,10 +923,41 @@ def main():
                                 else:
                                     st.error(message)
                 else:
-                    st.warning("Connected to Visio, but no documents open. Please open a document in Visio and refresh.")
+                    st.warning("Connected to Visio, but no documents open.")
+                    # Offer to create a new document
+                    create_doc_col1, create_doc_col2 = st.columns([3, 2])
+                    with create_doc_col1:
+                        new_doc_name = st.text_input("New document name", value="New Document", key="new_doc_name")
+                    with create_doc_col2:
+                        if st.button("Create New Document", key="create_doc_btn"):
+                            with st.spinner("Creating new Visio document..."):
+                                success = visio.create_new_document(new_doc_name)
+                                if success:
+                                    st.success(f"Created new document: {new_doc_name}")
+                                    # Refresh the document list
+                                    refresh_visio_connection()
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to create new document")
             else:
                 st.error("Not connected to Visio")
-                st.info("Make sure Visio is running and click the refresh button.")
+                # Check if Visio is installed but not running
+                if visio.is_visio_installed():
+                    st.info("Visio is installed but not running. Please start Visio and click the refresh button.")
+                    if st.button("Launch Visio", key="launch_visio_btn"):
+                        with st.spinner("Launching Visio..."):
+                            success = visio.launch_visio()
+                            if success:
+                                st.success("Visio launched successfully")
+                                # Wait a moment for Visio to initialize
+                                time.sleep(2)
+                                # Try to connect
+                                refresh_visio_connection()
+                                st.rerun()
+                            else:
+                                st.error("Failed to launch Visio")
+                else:
+                    st.info("Visio does not appear to be installed or accessible. Please install Visio or check your configuration.")
 
         # Show shape preview if selected - Placed at the bottom of workspace
         if st.session_state.preview_shape:
@@ -804,12 +966,35 @@ def main():
                 shape_data = st.session_state.preview_shape
                 st.caption(f"From: {shape_data['stencil_name']}")
 
+                # Add spacing for better preview layout
+                inject_spacer(10)
+
+                # Add custom CSS for better image padding and centering
+                st.markdown("""
+                <style>
+                    /* Improve image padding and centering in preview */
+                    div[data-testid="stImage"] {
+                        padding: 15px;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                    }
+                    div[data-testid="stImage"] > img {
+                        max-width: 90%;
+                        max-height: 90%;
+                        object-fit: contain;
+                    }
+                </style>
+                """, unsafe_allow_html=True)
+
                 # Get shape preview
                 preview = get_shape_preview(shape_data['stencil_path'], shape_data['name'])
                 if preview:
-                    st.image(preview, use_column_width=True, caption=shape_data['name'])
+                    st.image(preview, use_container_width=True, caption=shape_data['name'])
                 else:
                     st.error("Unable to generate preview")
+
+                inject_spacer(10)
 
                 if st.button("Close Preview", key="close_preview"):
                     st.session_state.preview_shape = None

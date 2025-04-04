@@ -122,6 +122,53 @@ class VisioIntegration:
         """Check if connected to Visio"""
         return self._test_connection()
 
+    def is_visio_installed(self) -> bool:
+        """Check if Visio is installed on the system
+
+        Returns:
+            bool: True if Visio is installed, False otherwise
+        """
+        if not win32com_available:
+            return False
+
+        try:
+            # Try to create a Dispatch object for Visio.Application
+            # This will succeed if Visio is installed, even if it's not running
+            import winreg
+            # Check registry for Visio installation
+            try:
+                winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "Visio.Application")
+                return True
+            except WindowsError:
+                return False
+        except Exception as e:
+            logger.error(f"Error checking if Visio is installed: {str(e)}")
+            return False
+
+    def launch_visio(self) -> bool:
+        """Launch Visio application
+
+        Returns:
+            bool: Success or failure
+        """
+        if not win32com_available:
+            logger.warning("win32com not available. Cannot launch Visio.")
+            return False
+
+        try:
+            # Initialize COM
+            pythoncom.CoInitialize()
+
+            # Create a new Visio instance
+            self.visio_app = win32com.client.Dispatch("Visio.Application")
+            self.visio_app.Visible = True
+            logger.info("Launched new Visio instance")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to launch Visio: {str(e)}")
+            self.visio_app = None
+            return False
+
     def get_open_documents(self) -> List[Dict[str, Any]]:
         """Get list of open Visio documents"""
         documents = []
