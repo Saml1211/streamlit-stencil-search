@@ -10,40 +10,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core import config, visio
 from app.core.components import render_shared_sidebar
 
-# Initialize session state values for this page
-if 'visio_control_active_tab' not in st.session_state:
-    st.session_state.visio_control_active_tab = "Documents"
-if 'new_doc_name' not in st.session_state:
-    st.session_state.new_doc_name = "New Document"
-if 'new_page_name' not in st.session_state:
-    st.session_state.new_page_name = "New Page"
-if 'selected_shape_id' not in st.session_state:
-    st.session_state.selected_shape_id = None
-if 'shape_edit_text' not in st.session_state:
-    st.session_state.shape_edit_text = ""
-if 'shape_edit_width' not in st.session_state:
-    st.session_state.shape_edit_width = 1.0
-if 'shape_edit_height' not in st.session_state:
-    st.session_state.shape_edit_height = 1.0
-if 'shape_edit_x' not in st.session_state:
-    st.session_state.shape_edit_x = 4.0
-if 'shape_edit_y' not in st.session_state:
-    st.session_state.shape_edit_y = 4.0
-if 'new_shape_type' not in st.session_state:
-    st.session_state.new_shape_type = "rectangle"
-if 'new_shape_width' not in st.session_state:
-    st.session_state.new_shape_width = 1.0
-if 'new_shape_height' not in st.session_state:
-    st.session_state.new_shape_height = 1.0
-if 'new_shape_x' not in st.session_state:
-    st.session_state.new_shape_x = 4.0
-if 'new_shape_y' not in st.session_state:
-    st.session_state.new_shape_y = 4.0
-if 'selected_shapes_for_alignment' not in st.session_state:
-    st.session_state.selected_shapes_for_alignment = []
+# Session state is now initialized in app.py
+# No need to initialize session state variables here
 
-# Use the shared sidebar component
-selected_directory = render_shared_sidebar(key_prefix="p4_")
+# Sidebar is now rendered in app.py
 
 def refresh_visio_connection():
     """Refresh the Visio connection and update session state"""
@@ -220,7 +190,7 @@ def change_shape_order(doc_index: int, page_index: int, shape_id: int, order_act
         st.error(f"Error changing shape order: {str(e)}")
         return False
 
-def main():
+def main(selected_directory=None):
     # Page title and description
     st.title("Visio Control")
 
@@ -964,4 +934,5 @@ def main():
 if __name__ == "__main__":
     main()
 else:
-    main()
+    # main() is now called from app.py with the selected_directory parameter
+    pass

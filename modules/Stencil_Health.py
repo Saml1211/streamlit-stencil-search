@@ -25,18 +25,9 @@ from app.core.components import render_shared_sidebar
 #     layout="wide",
 # )
 
-# Use the shared sidebar component
-selected_directory = render_shared_sidebar(key_prefix="p3_")
-
-# Initialize session state for cache
-if 'health_scan_running' not in st.session_state:
-    st.session_state.health_scan_running = False
-if 'health_data' not in st.session_state:
-    st.session_state.health_data = None
-if 'health_scan_progress' not in st.session_state:
-    st.session_state.health_scan_progress = 0
-if 'preview_shape' not in st.session_state:
-    st.session_state.preview_shape = None
+# Sidebar is now rendered in app.py
+# Session state is now initialized in app.py
+# No need to initialize session state variables here
 
 def analyze_stencil_health(root_dir):
     """
@@ -293,7 +284,7 @@ def toggle_shape_preview(shape=None):
     """Toggle shape preview in session state"""
     st.session_state.preview_shape = shape
 
-def main():
+def main(selected_directory=None):
     # Window width tracking is now handled in app.py
 
     st.title("Stencil Health Monitor")
@@ -504,4 +495,5 @@ def main():
 if __name__ == "__main__":
     main()
 else:
-    main()
+    # main() is now called from app.py with the selected_directory parameter
+    pass

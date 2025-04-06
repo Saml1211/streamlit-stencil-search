@@ -26,85 +26,8 @@ from app.core.custom_styles import inject_spacer
 #     initial_sidebar_state="expanded",
 # )
 
-# Initialize session state
-if 'stencils' not in st.session_state:
-    st.session_state.stencils = []
-if 'last_scan_dir' not in st.session_state:
-    st.session_state.last_scan_dir = ""
-if 'background_scan_running' not in st.session_state:
-    st.session_state.background_scan_running = False
-if 'last_background_scan' not in st.session_state:
-    st.session_state.last_background_scan = None
-if 'scan_progress' not in st.session_state:
-    st.session_state.scan_progress = 0
-if 'scan_status' not in st.session_state:
-    st.session_state.scan_status = ""
-if 'preview_shape' not in st.session_state:
-    st.session_state.preview_shape = None
-# Search history initialization
-if 'search_history' not in st.session_state:
-    st.session_state.search_history = []
-if 'search_results' not in st.session_state:
-    st.session_state.search_results = []
-# Shape collection initialization
-if 'shape_collection' not in st.session_state:
-    st.session_state.shape_collection = []
-# Search in document option
-if 'search_in_document' not in st.session_state:
-    st.session_state.search_in_document = False
-# Visio connection status
-if 'visio_connected' not in st.session_state:
-    st.session_state.visio_connected = False
-if 'visio_documents' not in st.session_state:
-    st.session_state.visio_documents = []
-if 'selected_doc_index' not in st.session_state:
-    st.session_state.selected_doc_index = 1
-if 'selected_page_index' not in st.session_state:
-    st.session_state.selected_page_index = 1
-# Favorites initialization
-if 'favorite_stencils' not in st.session_state:
-    st.session_state.favorite_stencils = []
-if 'show_favorites' not in st.session_state:
-    st.session_state.show_favorites = False
-# Search options
-if 'show_filters' not in st.session_state:
-    st.session_state.show_filters = False
-if 'use_fts_search' not in st.session_state:
-    st.session_state.use_fts_search = True
-if 'search_result_limit' not in st.session_state:
-    st.session_state.search_result_limit = 1000
-if 'filter_date_start' not in st.session_state:
-    st.session_state.filter_date_start = None
-if 'filter_date_end' not in st.session_state:
-    st.session_state.filter_date_end = None
-if 'filter_min_size' not in st.session_state:
-    st.session_state.filter_min_size = 0
-if 'filter_max_size' not in st.session_state:
-    st.session_state.filter_max_size = 50 * 1024 * 1024  # 50 MB
-if 'filter_min_shapes' not in st.session_state:
-    st.session_state.filter_min_shapes = 0
-if 'filter_max_shapes' not in st.session_state:
-    st.session_state.filter_max_shapes = 500
-# Shape metadata filters
-if 'filter_min_width' not in st.session_state:
-    st.session_state.filter_min_width = 0
-if 'filter_max_width' not in st.session_state:
-    st.session_state.filter_max_width = 0  # 0 means no limit
-if 'filter_min_height' not in st.session_state:
-    st.session_state.filter_min_height = 0
-if 'filter_max_height' not in st.session_state:
-    st.session_state.filter_max_height = 0  # 0 means no limit
-if 'filter_has_properties' not in st.session_state:
-    st.session_state.filter_has_properties = False
-if 'filter_property_name' not in st.session_state:
-    st.session_state.filter_property_name = ""
-if 'filter_property_value' not in st.session_state:
-    st.session_state.filter_property_value = ""
-if 'show_metadata_columns' not in st.session_state:
-    st.session_state.show_metadata_columns = False
-
-# Use the shared sidebar component
-selected_directory = render_shared_sidebar(key_prefix="p1_")
+# Session state is now initialized in app.py
+# No need to initialize session state variables here
 
 def background_scan(root_dir: str):
     """Background scanning function"""
@@ -355,7 +278,7 @@ def initialize_session_state():
 
 # Callback to update the main search term state
 def update_search_term():
-    st.session_state.current_search_term = st.session_state.search_input_widget
+    st.session_state.current_search_term = st.session_state.explorer_search_input_widget
 
 def perform_search():
     """Execute search and update related state"""
@@ -402,8 +325,8 @@ def perform_search():
         # Update search results
         st.session_state.search_results = results
 
-def main():
-    initialize_session_state()
+def main(selected_directory=None):
+    # No need to initialize session state here as it's done in app.py
     # Page title
     st.title("Visio Stencil Explorer")
 
@@ -451,6 +374,8 @@ def main():
         # Store it in session state for next time
         st.session_state.last_dir = root_dir
 
+    # Batch Actions are now handled in the main app sidebar
+
     # SEARCH COLUMN (Left) - Search and Results
     with search_col:
         # Search container - Simplified and focused on search function
@@ -462,7 +387,7 @@ def main():
             with search_row[0]:
                 # Use the new key and on_change callback, value from current_search_term
                 search_input = st.text_input("Search for shapes",
-                              key="search_input_widget",
+                              key="explorer_search_input_widget",
                               value=st.session_state.get('current_search_term', ''),
                               on_change=update_search_term,
                               label_visibility="collapsed")
@@ -1200,8 +1125,7 @@ def main():
                     st.session_state.preview_shape = None
                     st.rerun()
 
-# Call main() only once
+# Only call main() when run directly
 if __name__ == "__main__":
     main()
-else:
-    main()
+# When imported, main() is called from app.py

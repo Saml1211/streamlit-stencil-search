@@ -21,9 +21,47 @@ def inject_custom_css():
             --spacing-xl: 32px;
         }
 
+        /* ===== 0. Critical Layout Fixes ===== */
+        /* Ensure containers have proper height and scrolling */
+        @media (min-width: 992px) {
+            /* Desktop */
+            [data-testid="stCaptionContainer"] div[data-baseweb="card"],
+            div[data-baseweb="card"] {
+                min-height: 300px !important;
+                max-height: 600px !important;
+            }
+            .sidebar div[data-baseweb="card"] {
+                min-height: 150px !important;
+            }
+        }
+
+        @media (max-width: 991px) and (min-width: 768px) {
+            /* Tablet */
+            [data-testid="stCaptionContainer"] div[data-baseweb="card"],
+            div[data-baseweb="card"] {
+                min-height: 250px !important;
+                max-height: 500px !important;
+            }
+            .sidebar div[data-baseweb="card"] {
+                min-height: 120px !important;
+            }
+        }
+
+        @media (max-width: 767px) {
+            /* Mobile */
+            [data-testid="stCaptionContainer"] div[data-baseweb="card"],
+            div[data-baseweb="card"] {
+                min-height: 200px !important;
+                max-height: 400px !important;
+            }
+            .sidebar div[data-baseweb="card"] {
+                min-height: 100px !important;
+            }
+        }
+
         /* ===== 1. Input Field Alignment ===== */
-        /* Ensure date inputs have consistent height and alignment */
-        div[data-testid="column"] > div[data-baseweb="form-control"] {
+        /* Ensure date inputs have consistent height and alignment - simplified selector */
+        div[data-baseweb="form-control"] {
             height: 100%;
             display: flex;
             flex-direction: column;
@@ -36,13 +74,13 @@ def inject_custom_css():
         }
 
         /* ===== 2. Slider Input Labels Spacing ===== */
-        /* Add more space between slider labels and the slider itself */
+        /* Add more space between slider labels and the slider itself - simplified selector */
         div[data-testid="stSlider"] > div:first-child {
             margin-bottom: 10px;
         }
 
         /* ===== 3. Slider Values Positioning ===== */
-        /* Improve spacing for slider values */
+        /* Improve spacing for slider values - simplified selector */
         div[data-testid="stSlider"] > div:last-child {
             margin-top: 5px;
             padding: 0 10px;
@@ -57,7 +95,7 @@ def inject_custom_css():
         }
 
         /* Ensure the slider values on the track are properly displayed */
-        div[data-testid="stSlider"] span.css-1jz4ej3 {
+        div[data-testid="stSlider"] span {
             font-variant-numeric: normal !important;
             font-size: 0.9rem;
             font-weight: 400;
@@ -84,17 +122,17 @@ def inject_custom_css():
         }
 
         /* Ensure the slider container spans full width */
-        div[data-testid="stSlider"] > div[data-baseweb="slider"] {
+        div[data-testid="stSlider"] > div {
             width: 100% !important;
         }
 
         /* Make sure the slider element itself spans full width */
-        div[data-testid="stSlider"] div[data-baseweb="slider-container"] {
+        div[data-baseweb="slider-container"] {
             width: 100% !important;
         }
 
         /* Ensure the slider track spans full width */
-        div[data-testid="stSlider"] div[data-baseweb="slider"] {
+        div[data-baseweb="slider"] {
             width: 100% !important;
         }
 
@@ -111,7 +149,7 @@ def inject_custom_css():
         }
 
         /* Improve slider active track color */
-        div[data-testid="stSlider"] div[data-baseweb="slider"] div[data-testid="stActiveTrack"] {
+        div[data-testid="stActiveTrack"] {
             background-color: #ff4b4b !important;
         }
 
@@ -129,13 +167,13 @@ def inject_custom_css():
         }
 
         /* ===== 4. Recent Searches Layout ===== */
-        /* Add consistent spacing to search history buttons */
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        /* Add consistent spacing to search history buttons - simplified selector */
+        div[data-testid="column"] {
             padding: 0 5px;
         }
 
         /* Add margin to the buttons */
-        div[data-testid="stHorizontalBlock"] button {
+        button {
             margin: 5px 0;
         }
 
@@ -202,6 +240,11 @@ def inject_custom_css():
         /* Ensure consistent spacing in the sidebar */
         .sidebar .element-container {
             margin-bottom: var(--spacing-md);
+        }
+
+        /* Make sure content scrolls if it exceeds the container height */
+        div[data-baseweb="card"] > div {
+            overflow-y: auto;
         }
     </style>
     """, unsafe_allow_html=True)

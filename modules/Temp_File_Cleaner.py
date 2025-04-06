@@ -20,8 +20,7 @@ from app.core.components import render_shared_sidebar
 #     layout="wide",
 # )
 
-# Use the shared sidebar component
-selected_directory = render_shared_sidebar(key_prefix="p2_")
+# Sidebar is now rendered in app.py
 
 def get_layout_columns():
     """Get column layout based on screen width"""
@@ -79,7 +78,7 @@ def delete_file(file_path):
     except Exception as e:
         return False, f"Error deleting {file_path}: {str(e)}"
 
-def main():
+def main(selected_directory=None):
     # Window width tracking is now handled in app.py
 
     st.title("Visio Temporary File Cleaner")
@@ -284,4 +283,5 @@ def main():
 if __name__ == "__main__":
     main()
 else:
-    main()
+    # main() is now called from app.py with the selected_directory parameter
+    pass
