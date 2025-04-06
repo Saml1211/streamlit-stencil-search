@@ -1072,9 +1072,7 @@ class StencilDatabase:
                         # This is a simplistic approach - for a real implementation, you'd need
                         # to use JSON functions which may vary by SQLite version
                         filter_clauses.append("s.properties LIKE ?")
-                        property_name = filters.get("property_name")
-                        property_value = filters.get("property_value")
-                        params.append(f"%\"{property_name}\":\"{property_value}\"%")
+                        params.append(f'%"{filters['property_name']}":"{filters['property_value']}"%')
 
                 if filter_clauses:
                      base_query += " AND " + " AND ".join(filter_clauses)

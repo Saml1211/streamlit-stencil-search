@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import re
 from typing import List, Dict, Tuple, Optional, Any
 
 # Set up logging
@@ -27,6 +28,31 @@ class VisioIntegration:
         self._connect_attempts = 0
         self.available = win32com_available
         self.server_name = None  # Remote server name, None for local
+
+    def _normalize_path(self, path: str) -> str:
+        """
+        Normalize a Windows path for cross-platform compatibility
+
+        Args:
+            path (str): Windows path to normalize
+
+        Returns:
+            str: Normalized path
+        """
+        if not path:
+            return ""
+
+        # Replace backslashes with forward slashes
+        normalized = path.replace('\\', '/')
+
+        # Handle Windows drive letters (e.g., C:/ -> /c/)
+        drive_match = re.match(r'^([A-Za-z]):(.*)', normalized)
+        if drive_match:
+            drive_letter = drive_match.group(1).lower()
+            rest_of_path = drive_match.group(2)
+            normalized = f"/{drive_letter}{rest_of_path}"
+
+        return normalized
 
     def _test_connection(self) -> bool:
         """Test if the current connection is valid"""
@@ -139,7 +165,7 @@ class VisioIntegration:
             try:
                 winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "Visio.Application")
                 return True
-            except WindowsError:
+            except Exception:
                 return False
         except Exception as e:
             logger.error(f"Error checking if Visio is installed: {str(e)}")
@@ -164,6 +190,13 @@ class VisioIntegration:
             self.visio_app.Visible = True
             logger.info("Launched new Visio instance")
             return True
+        except pythoncom.com_error as e:
+            # Handle specific COM errors
+            hr, msg, exc, _ = e.args
+            logger.error(f"COM Error launching Visio: {msg}")
+            logger.error(f"Error code: 0x{hr:08x}, Exception info: {exc}")
+            self.visio_app = None
+            return False
         except Exception as e:
             logger.error(f"Failed to launch Visio: {str(e)}")
             self.visio_app = None
@@ -194,16 +227,33 @@ class VisioIntegration:
                         logger.info(f"Skipping stencil file: {doc.Name}")
                         continue
 
+                    # Normalize the path for cross-platform compatibility
+                    doc_path = self._normalize_path(doc.Path) if doc.Path else ""
+                    doc_full_name = self._normalize_path(doc.FullName) if doc.FullName else ""
+
                     documents.append({
                         "index": i,
                         "name": doc.Name,
-                        "path": doc.Path,
-                        "full_name": doc.FullName,
+                        "path": doc_path,
+                        "full_name": doc_full_name,
                         "document": doc
                     })
+                except pythoncom.com_error as e:
+                    # Handle specific COM errors
+                    hr, msg, exc, _ = e.args
+                    logger.error(f"COM Error accessing document at index {i}: {msg}")
+                    logger.error(f"Error code: 0x{hr:08x}, Exception info: {exc}")
+                    continue
                 except Exception as e:
                     logger.error(f"Error accessing document at index {i}: {str(e)}")
                     continue
+        except pythoncom.com_error as e:
+            # Handle specific COM errors
+            hr, msg, exc, _ = e.args
+            logger.error(f"COM Error getting documents: {msg}")
+            logger.error(f"Error code: 0x{hr:08x}, Exception info: {exc}")
+            # Connection might be lost, reset it
+            self.visio_app = None
         except Exception as e:
             logger.error(f"Error getting open documents: {str(e)}")
             # Connection might be lost, reset it

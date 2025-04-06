@@ -6,6 +6,18 @@ app:
   description: "A tool to catalog and search Visio stencil files"
   version: "1.0.0"
   debug: false
+  log_level: "info"  # Options: debug, info, warning, error, critical
+
+# User Preferences
+user_preferences:
+  # Default startup directory
+  default_startup_directory: "./test_data"
+  # Default search mode (true = FTS, false = Standard)
+  default_search_mode: true
+  # Default result limit
+  default_result_limit: 1000
+  # Show metadata columns by default
+  show_metadata_columns: false
 
 # Default Paths
 paths:
@@ -44,4 +56,4 @@ health:
   thresholds:
     low: 1
     medium: 5
-    high: 10 
+    high: 10

@@ -29,11 +29,11 @@ def get_layout_columns():
     width = st.session_state.get('browser_width', 1200)  # Default to desktop
 
     if width < 768:  # Mobile
-        return [1, 3, 4]  # Stack columns vertically on mobile
+        return [1]  # Single column on mobile
     elif width < 992:  # Tablet
-        return [1, 3, 4]  # Slightly compressed
+        return [1, 1]  # Two equal columns on tablet
     else:  # Desktop
-        return [1, 3, 5]  # Full width
+        return [1, 2, 2]  # Three columns with more space for results
 
 def find_temp_files(directory):
     """Find Visio temp files in the specified directory recursively"""
@@ -147,28 +147,54 @@ def main():
         # Allow selecting files to delete
         st.write("Select files to delete:")
 
-        # Get responsive column layout
-        column_sizes = get_layout_columns()
+        # Get responsive column layout based on screen width
+        browser_width = st.session_state.get('browser_width', 1200)
 
-        # Create columns for the table header
-        col1, col2, col3 = st.columns(column_sizes)
-        col1.markdown("**Select**")
-        col2.markdown("**File Name**")
-        col3.markdown("**Directory**")
+        if browser_width < 768:  # Mobile
+            # Use a more compact layout for mobile
+            st.markdown("<style>.stCheckbox {min-height: 0px !important;}</style>", unsafe_allow_html=True)
+            # Single column layout with select, name, and directory stacked
+            col1 = col2 = col3 = st
+            st.markdown("**Select | File Name | Directory**")
+        elif browser_width < 992:  # Tablet
+            # Two column layout
+            column_sizes = [1, 3]
+            col1, right_col = st.columns(column_sizes)
+            col1.markdown("**Select**")
+            col2 = col3 = right_col
+            col2.markdown("**File Name / Directory**")
+        else:  # Desktop
+            # Three column layout
+            column_sizes = [1, 2, 3]
+            col1, col2, col3 = st.columns(column_sizes)
+            col1.markdown("**Select**")
+            col2.markdown("**File Name**")
+            col3.markdown("**Directory**")
 
         # Create checkboxes for each file
         selected_files = []
         for file_data in files_data:
-            col1, col2, col3 = st.columns(column_sizes)
+            browser_width = st.session_state.get('browser_width', 1200)
 
-            # Checkbox for selection
-            is_selected = col1.checkbox("", value=True, key=f"file_{file_data['index']}")
-
-            # Responsive display
-            if is_mobile:
-                col2.markdown(f"**{file_data['name']}**")
-                col3.markdown(f"*{file_data['directory']}*")
-            else:
+            if browser_width < 768:  # Mobile
+                # Single column compact layout
+                is_selected = st.checkbox(
+                    f"{file_data['name']} - *{os.path.basename(file_data['directory'])}*",
+                    value=True,
+                    key=f"file_{file_data['index']}"
+                )
+                if is_selected:
+                    st.caption(file_data['directory'])
+            elif browser_width < 992:  # Tablet
+                # Two column layout
+                col1, right_col = st.columns([1, 3])
+                is_selected = col1.checkbox("", value=True, key=f"file_{file_data['index']}")
+                right_col.markdown(f"**{file_data['name']}**")
+                right_col.caption(file_data['directory'])
+            else:  # Desktop
+                # Three column layout
+                col1, col2, col3 = st.columns([1, 2, 3])
+                is_selected = col1.checkbox("", value=True, key=f"file_{file_data['index']}")
                 col2.text(file_data["name"])
                 col3.text(file_data["directory"])
 

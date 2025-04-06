@@ -351,16 +351,34 @@ def main():
 
         # Quick overview in expandable section
         with st.expander("Health Analysis Summary"):
-            # Metrics in two rows
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Empty Stencils", summary['empty_stencils'])
-            col2.metric("Stencils with Duplicate Shapes", summary['stencils_with_duplicates'])
-            col3.metric("Corrupt Stencils", summary['corrupt_stencils'])
+            # Responsive metrics layout based on screen width
+            browser_width = st.session_state.get('browser_width', 1200)
 
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Large Stencils", summary['large_stencils'])
-            col2.metric("Version Conflicts", summary['version_conflicts'])
-            col3.metric("Total Stencils Scanned", summary['total_stencils'])
+            if browser_width < 768:  # Mobile - stack metrics vertically
+                st.metric("Empty Stencils", summary['empty_stencils'])
+                st.metric("Stencils with Duplicate Shapes", summary['stencils_with_duplicates'])
+                st.metric("Corrupt Stencils", summary['corrupt_stencils'])
+                st.metric("Large Stencils", summary['large_stencils'])
+                st.metric("Version Conflicts", summary['version_conflicts'])
+                st.metric("Total Stencils Scanned", summary['total_stencils'])
+            elif browser_width < 992:  # Tablet - two columns
+                col1, col2 = st.columns(2)
+                col1.metric("Empty Stencils", summary['empty_stencils'])
+                col2.metric("Stencils with Duplicate Shapes", summary['stencils_with_duplicates'])
+                col1.metric("Corrupt Stencils", summary['corrupt_stencils'])
+                col2.metric("Large Stencils", summary['large_stencils'])
+                col1.metric("Version Conflicts", summary['version_conflicts'])
+                col2.metric("Total Stencils Scanned", summary['total_stencils'])
+            else:  # Desktop - three columns
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Empty Stencils", summary['empty_stencils'])
+                col2.metric("Stencils with Duplicate Shapes", summary['stencils_with_duplicates'])
+                col3.metric("Corrupt Stencils", summary['corrupt_stencils'])
+
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Large Stencils", summary['large_stencils'])
+                col2.metric("Version Conflicts", summary['version_conflicts'])
+                col3.metric("Total Stencils Scanned", summary['total_stencils'])
 
             # Add health charts
             if len(issues) > 0:
@@ -372,36 +390,66 @@ def main():
         if issues:
             st.subheader("Issues Found")
 
-            # Export options
-            export_col1, export_col2 = st.columns([1, 1])
-            with export_col1:
+            # Export options - responsive layout
+            browser_width = st.session_state.get('browser_width', 1200)
+
+            if browser_width < 768:  # Mobile - stack vertically
                 csv_data = export_to_csv(data)
                 st.download_button(
                     label="📋 Export to CSV",
                     data=csv_data,
                     file_name=f"stencil_health_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
-                    key="export_csv"
+                    key="export_csv",
+                    use_container_width=True
                 )
-            with export_col2:
+
                 excel_data = export_to_excel(data)
                 st.download_button(
                     label="📊 Export to Excel",
                     data=excel_data,
                     file_name=f"stencil_health_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="export_excel"
+                    key="export_excel",
+                    use_container_width=True
                 )
+            else:  # Tablet and Desktop - side by side
+                export_col1, export_col2 = st.columns([1, 1])
+                with export_col1:
+                    csv_data = export_to_csv(data)
+                    st.download_button(
+                        label="📋 Export to CSV",
+                        data=csv_data,
+                        file_name=f"stencil_health_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                        key="export_csv",
+                        use_container_width=True
+                    )
+                with export_col2:
+                    excel_data = export_to_excel(data)
+                    st.download_button(
+                        label="📊 Export to Excel",
+                        data=excel_data,
+                        file_name=f"stencil_health_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="export_excel",
+                        use_container_width=True
+                    )
 
-            # Filter options
+            # Filter options - responsive layout
+            browser_width = st.session_state.get('browser_width', 1200)
             severity_options = ["All", "High", "Medium", "Low"]
             issue_types = ["All"] + list(set(issue['issue'].split(":")[0] for issue in issues))
 
-            filter_col1, filter_col2 = st.columns(2)
-            with filter_col1:
+            if browser_width < 768:  # Mobile - stack vertically
                 selected_severity = st.selectbox("Filter by Severity", severity_options, key="sev_filter")
-            with filter_col2:
                 selected_type = st.selectbox("Filter by Issue Type", issue_types, key="type_filter")
+            else:  # Tablet and Desktop - side by side
+                filter_col1, filter_col2 = st.columns(2)
+                with filter_col1:
+                    selected_severity = st.selectbox("Filter by Severity", severity_options, key="sev_filter")
+                with filter_col2:
+                    selected_type = st.selectbox("Filter by Issue Type", issue_types, key="type_filter")
 
             # Apply filters
             filtered_issues = issues

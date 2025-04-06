@@ -85,6 +85,23 @@ if 'filter_min_shapes' not in st.session_state:
     st.session_state.filter_min_shapes = 0
 if 'filter_max_shapes' not in st.session_state:
     st.session_state.filter_max_shapes = 500
+# Shape metadata filters
+if 'filter_min_width' not in st.session_state:
+    st.session_state.filter_min_width = 0
+if 'filter_max_width' not in st.session_state:
+    st.session_state.filter_max_width = 0  # 0 means no limit
+if 'filter_min_height' not in st.session_state:
+    st.session_state.filter_min_height = 0
+if 'filter_max_height' not in st.session_state:
+    st.session_state.filter_max_height = 0  # 0 means no limit
+if 'filter_has_properties' not in st.session_state:
+    st.session_state.filter_has_properties = False
+if 'filter_property_name' not in st.session_state:
+    st.session_state.filter_property_name = ""
+if 'filter_property_value' not in st.session_state:
+    st.session_state.filter_property_value = ""
+if 'show_metadata_columns' not in st.session_state:
+    st.session_state.show_metadata_columns = False
 
 # Use the shared sidebar component
 selected_directory = render_shared_sidebar(key_prefix="p1_")
@@ -359,7 +376,15 @@ def perform_search():
             'max_size': st.session_state.filter_max_size,
             'min_shapes': st.session_state.filter_min_shapes,
             'max_shapes': st.session_state.filter_max_shapes,
-            'show_favorites': st.session_state.get('show_favorites_toggle', False)
+            'show_favorites': st.session_state.get('show_favorites_toggle', False),
+            # Shape metadata filters
+            'min_width': st.session_state.filter_min_width,
+            'max_width': st.session_state.filter_max_width,
+            'min_height': st.session_state.filter_min_height,
+            'max_height': st.session_state.filter_max_height,
+            'has_properties': st.session_state.filter_has_properties,
+            'property_name': st.session_state.filter_property_name,
+            'property_value': st.session_state.filter_property_value
         }
 
         # Initialize results list
@@ -405,8 +430,17 @@ def main():
         Enable "Search in Current Document" in the search options to find shapes in your open Visio document.
         """)
 
+    # Determine column ratio based on screen width
+    browser_width = st.session_state.get('browser_width', 1200)  # Default to desktop
+    if browser_width < 768:  # Mobile
+        col_ratio = [1, 1]  # Equal columns on mobile (will stack vertically)
+    elif browser_width < 992:  # Tablet
+        col_ratio = [3, 2]  # Slightly more space for search
+    else:  # Desktop
+        col_ratio = [2, 1]  # Default ratio
+
     # Create two main columns for better layout
-    search_col, workspace_col = st.columns([2, 1])
+    search_col, workspace_col = st.columns(col_ratio)
 
     # Use the root_dir from the session state with a fallback default
     if 'last_dir' in st.session_state:
@@ -640,6 +674,63 @@ def main():
                         st.session_state.filter_min_shapes = st.session_state.shape_count_range[0]
                         st.session_state.filter_max_shapes = st.session_state.shape_count_range[1]
 
+                    # Shape metadata filters
+                    st.write("##### Shape Metadata Filters")
+                    inject_spacer(10)
+
+                    # Width and height filters
+                    metadata_col1, metadata_col2 = st.columns(2)
+                    with metadata_col1:
+                        st.number_input("Min Width",
+                                min_value=0.0,
+                                max_value=100.0,
+                                step=0.1,
+                                key="filter_min_width",
+                                help="Filter shapes by minimum width")
+                    with metadata_col2:
+                        st.number_input("Max Width",
+                                min_value=0.0,
+                                max_value=100.0,
+                                step=0.1,
+                                key="filter_max_width",
+                                help="Filter shapes by maximum width (0 = no limit)")
+
+                    with metadata_col1:
+                        st.number_input("Min Height",
+                                min_value=0.0,
+                                max_value=100.0,
+                                step=0.1,
+                                key="filter_min_height",
+                                help="Filter shapes by minimum height")
+                    with metadata_col2:
+                        st.number_input("Max Height",
+                                min_value=0.0,
+                                max_value=100.0,
+                                step=0.1,
+                                key="filter_max_height",
+                                help="Filter shapes by maximum height (0 = no limit)")
+
+                    # Property filters
+                    st.checkbox("Has Properties",
+                            key="filter_has_properties",
+                            help="Only show shapes that have custom properties")
+
+                    prop_col1, prop_col2 = st.columns(2)
+                    with prop_col1:
+                        st.text_input("Property Name",
+                                key="filter_property_name",
+                                help="Filter by specific property name")
+                    with prop_col2:
+                        st.text_input("Property Value",
+                                key="filter_property_value",
+                                help="Filter by specific property value")
+
+                    # Display options
+                    st.write("##### Display Options")
+                    st.checkbox("Show Metadata Columns",
+                            key="show_metadata_columns",
+                            help="Show shape metadata columns in search results")
+
                     # Reset filters button
                     if st.button("Reset Filters", key="reset_filters"):
                         st.session_state.filter_date_start = None
@@ -648,7 +739,15 @@ def main():
                         st.session_state.filter_max_size = 50 * 1024 * 1024
                         st.session_state.filter_min_shapes = 0
                         st.session_state.filter_max_shapes = 500
+                        st.session_state.filter_min_width = 0
+                        st.session_state.filter_max_width = 0
+                        st.session_state.filter_min_height = 0
+                        st.session_state.filter_max_height = 0
+                        st.session_state.filter_has_properties = False
+                        st.session_state.filter_property_name = ""
+                        st.session_state.filter_property_value = ""
                         st.session_state.show_favorites = False
+                        st.session_state.show_metadata_columns = False
                         st.rerun()
 
             # Recent searches - More prominent placement
@@ -688,7 +787,15 @@ def main():
                                     'min_size': st.session_state.filter_min_size,
                                     'max_size': st.session_state.filter_max_size,
                                     'min_shapes': st.session_state.filter_min_shapes,
-                                    'max_shapes': st.session_state.filter_max_shapes
+                                    'max_shapes': st.session_state.filter_max_shapes,
+                                    # Include metadata filters
+                                    'min_width': st.session_state.filter_min_width,
+                                    'max_width': st.session_state.filter_max_width,
+                                    'min_height': st.session_state.filter_min_height,
+                                    'max_height': st.session_state.filter_max_height,
+                                    'has_properties': st.session_state.filter_has_properties,
+                                    'property_name': st.session_state.filter_property_name,
+                                    'property_value': st.session_state.filter_property_value
                                 }
                                 # Perform search immediately after setting term
                                 st.session_state.search_results = search_stencils_db(st.session_state.current_search_term, filters)
@@ -725,14 +832,50 @@ def main():
             with st.container(border=True):
                 st.write(f"### Results ({len(st.session_state.search_results)} shapes found)")
 
-                # Create a DataFrame for the results
-                df = pd.DataFrame([
-                    {
-                        "Shape": item["shape"],
-                        "Stencil": item["stencil_name"],
-                        "Path": item["stencil_path"]
-                    } for item in st.session_state.search_results
-                ])
+                # Create a DataFrame for the results with optional metadata columns
+                if st.session_state.show_metadata_columns:
+                    # Determine which columns to show based on screen width
+                    browser_width = st.session_state.get('browser_width', 1200)
+                    if browser_width < 768:  # Mobile
+                        # On mobile, show minimal columns
+                        df = pd.DataFrame([
+                            {
+                                "Shape": item["shape"],
+                                "Stencil": item["stencil_name"],
+                                "Width": item.get("width", 0),
+                                "Height": item.get("height", 0)
+                            } for item in st.session_state.search_results
+                        ])
+                    else:  # Tablet and Desktop
+                        df = pd.DataFrame([
+                            {
+                                "Shape": item["shape"],
+                                "Stencil": item["stencil_name"],
+                                "Path": item["stencil_path"],
+                                "Width": item.get("width", 0),
+                                "Height": item.get("height", 0),
+                                "Properties": len(item.get("properties", {}))
+                            } for item in st.session_state.search_results
+                        ])
+                else:
+                    # Determine which columns to show based on screen width
+                    browser_width = st.session_state.get('browser_width', 1200)
+                    if browser_width < 768:  # Mobile
+                        # On mobile, show minimal columns
+                        df = pd.DataFrame([
+                            {
+                                "Shape": item["shape"],
+                                "Stencil": item["stencil_name"]
+                            } for item in st.session_state.search_results
+                        ])
+                    else:  # Tablet and Desktop
+                        df = pd.DataFrame([
+                            {
+                                "Shape": item["shape"],
+                                "Stencil": item["stencil_name"],
+                                "Path": item["stencil_path"]
+                            } for item in st.session_state.search_results
+                        ])
 
                 # Show the results with improved styling
                 for idx, row in df.iterrows():
@@ -745,14 +888,34 @@ def main():
                             shape_id = original_result.get('shape_id')
                             page_index = original_result.get('page_index')
 
-                        # Use different column layout based on shape type
-                        if is_document_shape:
-                            res_col1, res_col2, res_col3 = st.columns([5, 1, 1])
-                        else:
+                        # Use consistent column layout for all shapes
+                        # Adjust column widths based on screen size
+                        browser_width = st.session_state.get('browser_width', 1200)
+                        if browser_width < 768:  # Mobile
+                            res_col1, res_col2 = st.columns([4, 1])
+                            res_col3 = res_col2  # Use same column for both actions
+                        else:  # Tablet and Desktop
                             res_col1, res_col2, res_col3 = st.columns([5, 1, 1])
 
                         with res_col1:
-                            st.markdown(f"**{row['Shape']}**")
+                            # Use the original_result we already have
+                            shape_name = row['Shape']
+
+                            # Check if we have highlight information
+                            if 'highlight_start' in original_result and original_result['highlight_start'] >= 0:
+                                # Create highlighted text
+                                start = original_result['highlight_start']
+                                end = original_result['highlight_end']
+                                highlighted_name = (
+                                    f"{shape_name[:start]}"
+                                    f"<span style='background-color: #ffff00;'>{shape_name[start:end]}</span>"
+                                    f"{shape_name[end:]}"
+                                )
+                                st.markdown(f"**{highlighted_name}**", unsafe_allow_html=True)
+                            else:
+                                # No highlight information, just show the name
+                                st.markdown(f"**{shape_name}**")
+
                             st.caption(f"{row['Stencil']}")
 
                             # For document shapes, show a different icon/indicator
@@ -777,12 +940,20 @@ def main():
                             else:
                                 # For stencil shapes, show the preview button
                                 if st.button("👁️", key=f"preview_{idx}", help="Preview shape"):
-                                    # Set the shape for preview
-                                    toggle_shape_preview({
+                                    # Get the original result with all metadata
+                                    original_result = st.session_state.search_results[idx]
+
+                                    # Set the shape for preview with metadata if available
+                                    preview_data = {
                                         "name": row['Shape'],
                                         "stencil_name": row['Stencil'],
-                                        "stencil_path": row['Path']
-                                    })
+                                        "stencil_path": row['Path'],
+                                        "width": original_result.get("width", 0),
+                                        "height": original_result.get("height", 0),
+                                        "geometry": original_result.get("geometry", []),
+                                        "properties": original_result.get("properties", {})
+                                    }
+                                    toggle_shape_preview(preview_data)
 
                         with res_col3:
                             # Add to collection button (for both types)
@@ -987,10 +1158,39 @@ def main():
                 </style>
                 """, unsafe_allow_html=True)
 
-                # Get shape preview
-                preview = get_shape_preview(shape_data['stencil_path'], shape_data['name'])
+                # Get shape preview with metadata if available
+                preview = get_shape_preview(
+                    shape_data['stencil_path'],
+                    shape_data['name'],
+                    shape_data=shape_data if 'geometry' in shape_data else None
+                )
                 if preview:
                     st.image(preview, use_container_width=True, caption=shape_data['name'])
+
+                    # Show metadata if available
+                    if 'width' in shape_data and shape_data['width'] > 0:
+                        st.caption(f"Width: {shape_data['width']:.2f}, Height: {shape_data['height']:.2f}")
+
+                    # Show properties if available and not empty
+                    if 'properties' in shape_data and shape_data['properties']:
+                        st.write("##### Properties")
+
+                        # Determine layout based on screen width and number of properties
+                        browser_width = st.session_state.get('browser_width', 1200)
+                        num_properties = len(shape_data['properties'])
+
+                        if browser_width < 768 or num_properties > 5:  # Mobile or many properties
+                            # Use a vertical layout with expandable sections for many properties
+                            with st.expander("View All Properties", expanded=(num_properties <= 5)):
+                                for key, value in shape_data['properties'].items():
+                                    st.markdown(f"**{key}**: {value}")
+                        else:  # Desktop with few properties
+                            # Use a dataframe for a more compact display
+                            props_df = pd.DataFrame([
+                                {"Property": key, "Value": value}
+                                for key, value in shape_data['properties'].items()
+                            ])
+                            st.dataframe(props_df, use_container_width=True)
                 else:
                     st.error("Unable to generate preview")
 

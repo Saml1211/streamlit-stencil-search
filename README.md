@@ -27,7 +27,10 @@ This tool helps engineers quickly find which stencils contain specific shapes an
 - 🔎 **Real-time Shape Search** - Instantly search across thousands of shapes
 - 🔄 **Zero Visio Dependencies** - Works without Visio installation
 - 📊 **Clear Results Display** - Shows shape name, stencil name, and file path
-- 👁️ **Shape Preview** - Visualize shapes directly in the application
+- 👁️ **Accurate Shape Previews** - Visualize shapes with actual geometry data
+- 🏷️ **Shape Metadata Filtering** - Filter shapes by dimensions and properties
+- 🔗 **Enhanced Visio Integration** - Improved error handling and cross-platform support
+- ⚙️ **User Customization** - Configure default startup directory and search mode
 - 🧹 **Temp File Cleaner** - Find and remove corrupted Visio temporary files that cause errors
 - 🧪 **Advanced Stencil Health Monitor** - Analyze stencils for issues with data visualization
   - Identify empty stencils
@@ -166,13 +169,21 @@ To make the application accessible to others on your local network:
 streamlit-stencil-search/
 ├── app/                  # Core application logic
 │   └── core/             # Business logic (parsing, scanning, etc.)
+│       ├── db.py                # Database operations and search functionality
+│       ├── file_scanner.py      # File scanning and discovery
+│       ├── logging_utils.py     # Logging utilities for debugging
+│       ├── shape_preview.py     # Shape preview generation with geometry data
+│       ├── stencil_parser.py    # Stencil parsing with metadata extraction
+│       └── visio_integration.py # Visio COM API integration
 ├── pages/                # Streamlit pages
 │   ├── 01_Visio_Stencil_Explorer.py # Main search interface
 │   ├── 02_Temp_File_Cleaner.py      # Temp file cleaner tool
 │   └── 03_Stencil_Health.py         # Stencil health analysis tool
 ├── data/                 # Cached stencil data (database)
+├── logs/                 # Application logs for debugging
 ├── docs/                 # Documentation and images
 ├── app.py                # Main application entry point (using st.navigation)
+├── config.yaml           # Application configuration and user preferences
 └── requirements.txt      # Python dependencies
 ```
 
@@ -183,8 +194,8 @@ For detailed project information, status, and roadmap, see the [Project Document
 ---
 
 <div align="center">
-  
+
   Made with ❤️ by Sam Lyndon
-  
+
   © 2025
-</div> 
+</div>
