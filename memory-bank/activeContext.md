@@ -1,64 +1,41 @@
-# Active Context (Updated 2025-06-04)
+# Active Context: Chrome Extension to Visio Bridge (Updated: 2025-07-07)
 
 ## Current Work Focus
-The Visio Stencil Search application is in Beta status with all core functionality implemented. The current focus is on improving stability, performance optimization, enhancing the user interface, and refining the Visio integration features. The application successfully performs stencil scanning, full-text shape searching, temporary file cleaning, stencil health analysis, and direct Visio document integration. The codebase shows a mature implementation with robust error handling, database optimization, and a modular component architecture.
+The initial implementation phase (MCP Task Request `req-8`) for the Chrome Extension and Local API Server is complete. This phase established the foundational project structures, core communication pathways, and placeholder logic for key features like text capture, region selection screenshotting, API interaction, and basic COM connection.
 
-## Recent Changes
-- Enhanced database integrity checking with automatic backup and recovery
-- Improved error handling throughout the application, especially in Visio integration
-- Added remote server connection support for Visio integration
-- Enhanced shape preview rendering with better geometry parsing
-- Optimized search performance with improved database indexing and FTS5 implementation
-- Added shape collection feature for batch operations with Visio
-- Improved UI layout with card-based design and better visual hierarchy
-- Added advanced search filtering options including shape metadata filters
-- Enhanced stencil health analysis with more comprehensive checks
-- Added data visualization for health reports and stencil statistics
-- Implemented directory preset management for quick directory switching
-- Added export capabilities for search results and health reports in multiple formats
-- Implemented multi-document and multi-page support in Visio Control
+The current focus shifts to **implementing the core Visio automation logic** within the `local-api-server/visio_integration.py` module. This involves replacing the placeholder functions with actual PyWin32 COM calls to insert captured text and images into the active Visio document.
+
+## Recent Changes (Request req-8 Summary)
+- Created `chrome-extension` directory with Manifest V3, service worker, popup, content scripts (`content.js`, `region_selector.js`), and icons.
+- Implemented context menu for text capture.
+- Implemented region selection screenshot mechanism (trigger, script injection, coordinate capture, cropping via OffscreenCanvas).
+- Established `fetch` communication from the extension's service worker to the local API.
+- Created `local-api-server` directory with FastAPI (`main.py`) and initial dependencies (`requirements.txt`).
+- Implemented `/import` API endpoint with Pydantic validation.
+- Created `visio_integration.py` stub with basic COM connection function (`get_visio_app`) and placeholder import functions.
+- Integrated calls from `main.py` to `visio_integration.py`.
 
 ## Active Decisions
-- **Storage Approach**: Using SQLite database with FTS5 for efficient full-text searches and proper indexing
-- **UI Framework**: Committed to Streamlit with enhanced custom styling and JavaScript for responsive design
-- **Cross-Platform Compatibility**: Core functionality works across platforms, with Windows-specific features for Visio integration
-- **No Visio Dependency**: Core features work without Visio, but enhanced functionality available when Visio is installed
-- **UI Layout Improvements**: Using a card-based layout with consistent spacing and visual hierarchy
-- **Search Optimization**: Using full-text search with toggle for compatibility and advanced filtering options
-- **Component Organization**: Modular approach with reusable UI components shared across pages
-- **Error Handling**: Comprehensive error handling with graceful degradation and informative user feedback
-- **Performance Optimization**: Database optimization with proper indexing and caching strategies
+- **Screenshot Method**: Region selection implemented instead of simple capture + crop.
+- **Cropping Location**: Performed in the service worker using `OffscreenCanvas`.
+- **API Framework**: FastAPI selected for the local server.
+- **Visio Integration**: Initial focus on PyWin32 COM (Windows only).
+- **Error Handling**: Basic error handling added for COM connection, API calls, and script injection. More detailed Visio COM error handling is pending.
+- **State Management**: Basic state handled via messages; `sessionStorage` used in popup as temporary measure (needs refinement).
 
 ## Current Tasks
-- Refining the Visio integration with better error handling and remote connection support
-- Optimizing database performance for large stencil collections
-- Enhancing shape preview rendering quality
-- Implementing additional export options and formats
-- Testing with various stencil file formats and sizes
-- Improving error recovery for corrupted database files
-- Enhancing cross-platform path handling for network locations
-- Implementing advanced search filtering options
+- No active MCP tasks. Request `req-8` is complete. Awaiting planning for the next phase.
 
-## Next Steps
-1. Enhance shape preview rendering quality for complex shapes
-2. Add more advanced filtering options in the search interface
-3. Implement batch operations for stencil management
-4. Add user preferences for customizing the interface
-5. Add more detailed analytics in the Stencil Health page
-6. Improve cross-platform path handling for network locations
-7. Add REST API for programmatic access
-8. Create comprehensive user documentation
-9. Implement advanced shape alignment and arrangement in Visio Control
-10. Add more visualization options for stencil data
+## Next Steps (High-Level)
+1.  **Plan next implementation phase**: Define new tasks in MCP Task Manager for implementing Visio text/image insertion via PyWin32.
+2.  **Implement Visio Text Insertion**: Flesh out `visio_integration.import_text_to_visio`.
+3.  **Implement Visio Image Insertion**: Flesh out `visio_integration.import_image_to_visio` (including Base64 decoding and temp file handling).
+4.  **Refine Error Handling**: Improve Visio COM error details and user feedback in the extension.
+5.  **Testing**: Test the end-to-end flow on a Windows machine with Visio installed.
 
 ## Technical Considerations
-- Memory usage optimization when scanning large network directories
-- Database performance tuning for handling thousands of stencils
-- Preview generation speed vs. quality tradeoffs
-- Cross-platform testing, especially for network path handling
-- Error handling for network disconnections and corrupt files
-- Streamlit component limitations and workarounds for complex UI needs
-- Full-text search integration with existing search interfaces
-- Database integrity maintenance for long-term reliability
-- Visio COM integration limitations and error handling
-- Background processing for long-running operations
+- Handling different Visio versions/states via COM.
+- Managing temporary files for image insertion securely and reliably.
+- Ensuring correct thread handling for COM objects if FastAPI runs workers.
+- Packaging the Python server with PyInstaller, including PyWin32 DLLs.
+- Refining popup state management for robustness.

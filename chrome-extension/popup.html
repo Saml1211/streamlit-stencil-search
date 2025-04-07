@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visio Importer</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: sans-serif;
+            width: 300px; /* Adjust as needed */
+            padding: 10px;
+        }
+        #content-preview {
+            min-height: 50px;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            padding: 5px;
+            background-color: #f9f9f9;
+        }
+        #content-preview img {
+            max-width: 100%;
+            height: auto;
+        }
+        #status {
+            margin-top: 10px;
+            font-style: italic;
+            color: grey;
+        }
+    </style>
+</head>
+<body>
+    <h3>Send to Visio</h3>
+    <div id="content-preview">
+        <!-- Captured content preview (text or image) will appear here -->
+        Loading preview...
+    </div>
+    <div>
+        <!-- Options for embedding (e.g., shape type) can go here -->
+    </div>
+    <button id="capture-screenshot-button">Capture Screenshot</button>
+    <button id="send-button" style="margin-top: 5px;">Send Content to Visio</button>
+    <div id="status"></div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

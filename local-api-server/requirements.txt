@@ -1,0 +1,3 @@
+fastapi
+uvicorn[standard] # Includes standard dependencies like websockets
+# pywin32 will be added later for COM integration

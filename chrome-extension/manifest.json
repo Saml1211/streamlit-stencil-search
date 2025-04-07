@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Visio Content Importer",
+  "version": "0.1.0",
+  "description": "Captures web content (text/screenshots) and sends it to a local Visio instance via an API bridge.",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:5100/*",
+    "http://localhost:5100/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+  }
+}
