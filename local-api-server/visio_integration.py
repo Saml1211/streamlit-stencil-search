@@ -80,6 +80,38 @@ def import_image_to_visio(base64_image_content, metadata=None):
         return {"status": "error", "message": f"Unexpected error during import: {e}"}
 
 
+
+def check_visio_connection() -> dict:
+    """Checks if a connection to the Visio application can be established."""
+    try:
+        # Try to get existing or create new instance
+        visio = get_visio_app()
+        if visio:
+            print("Visio connection check: Success.")
+            try:
+                version = visio.Version
+                print(f"Visio Version (Check): {version}")
+                return {"status": "connected", "message": f"Visio application is running (Version: {version}) and accessible."}
+            except pythoncom.com_error as version_error:
+                 print(f"Visio connection check: Instance obtained but unresponsive? COM Error: {version_error}")
+                 return {"status": "error", "message": f"Visio instance obtained but might be unresponsive. COM Error: {version_error}"}
+            except Exception as generic_version_error:
+                 print(f"Visio connection check: Instance obtained but unresponsive? Error: {generic_version_error}")
+                 return {"status": "error", "message": f"Visio instance obtained but might be unresponsive. Error: {generic_version_error}"}
+        else:
+             # Should not happen if get_visio_app works as expected
+             return {"status": "error", "message": "Failed to get or create Visio instance (get_visio_app returned None)."}
+
+    except VisioIntegrationError as vie:
+        print(f"Visio connection check failed: {vie}")
+        return {"status": "disconnected", "error_message": str(vie)}
+    except Exception as e:
+        print(f"Unexpected error during Visio connection check: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error_message": f"An unexpected error occurred: {e}"}
+
+
 if __name__ == '__main__':
     # Simple test
     print("Running basic Visio connection test...")

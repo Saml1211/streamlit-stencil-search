@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "visio-bridge": {
+      "command": "python",
+      "args": [
+        "/ABSOLUTE/PATH/TO/visio_bridge_server.py"
+      ],
+      "env": {},
+      "disabled": false,
+      "autoApprove": [
+        "check_visio_connection",
+        "search_shapes",
+        "get_stencil_list"
+      ]
+    }
+  }
+}

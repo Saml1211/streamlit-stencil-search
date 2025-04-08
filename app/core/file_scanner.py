@@ -3,24 +3,32 @@ from datetime import datetime
 from tqdm import tqdm
 from .db import StencilDatabase
 
-def scan_directory(root_dir, parser_func=None, use_cache=True):
+# Modified to accept an external DB instance
+def scan_directory(root_dir, parser_func=None, use_cache=True, db_instance: Optional[StencilDatabase] = None):
     """
-    Recursively scan directory for Visio stencils with caching support
-    
+    Recursively scan directory for Visio stencils with caching support.
+
     Args:
-        root_dir (str): Root directory to scan
-        parser_func (callable): Function to parse stencil files
-        use_cache (bool): Whether to use SQLite caching
-        
+        root_dir (str): Root directory to scan.
+        parser_func (callable, optional): Function to parse stencil files. Defaults to None.
+        use_cache (bool): Whether to use SQLite caching. Defaults to True.
+        db_instance (StencilDatabase, optional): An existing database instance to use.
+                                                 If None and use_cache is True, a new instance is created.
+                                                 Defaults to None.
+
     Returns:
-        list: List of dictionaries containing stencil info
+        list: List of dictionaries containing stencil info for scanned/updated files.
+              Returns empty list if root_dir doesn't exist.
+              Note: This now primarily returns newly scanned/updated info,
+                    relying on the passed/created db instance for persistence.
     """
     if not os.path.exists(root_dir):
         print(f"Warning: Directory '{root_dir}' does not exist.")
         return []
         
     stencils = []
-    db = StencilDatabase() if use_cache else None
+    db = db_instance if db_instance and use_cache else (StencilDatabase() if use_cache else None)
+    db_created_internally = (db is not None and not db_instance) # Flag to know if we should close it
     
     # Track scan time
     scan_time = datetime.now()
@@ -48,11 +56,15 @@ def scan_directory(root_dir, parser_func=None, use_cache=True):
             }
         ]
         
-        # Cache mock stencils if using cache
+        # Cache mock stencils if using cache and we have a db instance
         if db:
             for stencil in mock_stencils:
-                db.cache_stencil(stencil)
-            db.close()
+                 # Add file_size and last_modified to mock data before caching
+                 stencil['file_size'] = stencil.get('file_size', 0)
+                 stencil['last_modified'] = datetime.now().isoformat() # Use current time for mock
+                 db.cache_stencil(stencil)
+            if db_created_internally:
+                 db.close() # Close only if created internally
             
         return mock_stencils
     
@@ -113,7 +125,11 @@ def scan_directory(root_dir, parser_func=None, use_cache=True):
         if db:
             db.cache_stencil(stencil_data)
     
-    if db:
+    # Close the connection only if it was created inside this function
+    if db_created_internally:
         db.close()
-    
-    return stencils 
+        print("Internal DB connection closed by scan_directory.")
+
+    # Return only the stencils processed in *this* scan run
+    # The full list should be retrieved from the DB separately if needed
+    return stencils # This list now contains only newly scanned/updated items

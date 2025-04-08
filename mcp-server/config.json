@@ -1,0 +1,14 @@
+{
+  "local_api": {
+    "base_url": "http://127.0.0.1:5100",
+    "timeout": 30.0
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "visio_bridge_mcp.log"
+  },
+  "security": {
+    "rate_limit": 10,
+    "rate_limit_period": 60
+  }
+}

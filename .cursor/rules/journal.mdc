@@ -1,7 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
 # Visio Stencil Search Project Journal
 
 ## Project Overview
-This journal documents important insights, patterns, and project-specific knowledge for the Visio Stencil Search application. The application is designed to help users search through Microsoft Visio stencil files without requiring Visio to be installed, with optional Visio integration for enhanced workflow when available.
+This journal documents important insights, patterns, and project-specific knowledge for the Visio Stencil Search application. The application is designed to help users search through Microsoft Visio stencil files without requiring Visio to be installed, with optional Visio integration for enhanced workflow when available. Recently expanded into the Visio Bridge Integration Suite, it now includes a Chrome extension, local API server, and MCP server for AI assistant integration.
 
 ## Key Project Patterns
 
@@ -16,6 +21,8 @@ This journal documents important insights, patterns, and project-specific knowle
 - Database operations are wrapped with transaction management and locking for thread safety
 - Responsive design is implemented with JavaScript for adapting to different screen sizes
 - Background processing for long-running operations maintains UI responsiveness
+- Bridge pattern implemented for MCP server to communicate with local API
+- Layered architecture with clear separation between protocol handling and business logic
 
 ### Development Workflow
 - The codebase is organized in a modular fashion with clear component boundaries
@@ -28,6 +35,8 @@ This journal documents important insights, patterns, and project-specific knowle
 - Database integrity is checked at startup with automatic repair mechanisms
 - File handling includes graceful error recovery for inaccessible or corrupted files
 - Version control supports managed development process
+- Asynchronous programming for the MCP server to handle concurrent requests
+- Tool-based architecture for MCP server to expose functionality to AI assistants
 
 ### Streamlit Patterns
 - Each page has its own file in the `pages/` directory with a numerical prefix for ordering
@@ -41,6 +50,17 @@ This journal documents important insights, patterns, and project-specific knowle
 - Consistent component spacing and styling for visual hierarchy
 - Error messages are displayed with appropriate context and visibility
 
+### Extension & API Patterns
+- Chrome extension uses Manifest V3 with event-based architecture
+- Content scripts for webpage interaction
+- Background service worker for main extension logic
+- Message passing for communication between content scripts and service worker
+- Region selection implemented with custom overlay
+- FastAPI for local API server with asynchronous endpoints
+- PyWin32 for COM automation with Visio
+- Bridge layer for connecting MCP to local API server
+- Tool registration pattern for MCP server capabilities
+
 ### Data Handling
 - Stencil data is cached in SQLite database for performance
 - Full-text search (FTS5) used for optimized search operations
@@ -53,6 +73,8 @@ This journal documents important insights, patterns, and project-specific knowle
 - Foreign key constraints ensure data consistency
 - Database backup is performed before potentially destructive operations
 - Transaction management prevents partial operations
+- JSON for MCP server configuration and communication
+- Base64 encoding for image data transfer
 
 ### File Operations
 - The application supports recursive directory scanning for Visio files
@@ -65,6 +87,7 @@ This journal documents important insights, patterns, and project-specific knowle
 - XML parsing extracts shape data from Office Open XML formats
 - ZIP handling for modern Visio file formats (which are actually ZIP archives)
 - Cross-platform path normalization for compatibility
+- Temporary file creation for image data in Visio import operations
 
 ## UI Implementation Patterns
 - Three-column layout for search results (shape, stencil, location)
@@ -82,6 +105,8 @@ This journal documents important insights, patterns, and project-specific knowle
 - Progress bars and spinners for long-running operations
 - Status indicators for connection state and background processes
 - Form validation with appropriate error messages
+- Chrome extension popup with action buttons and status feedback
+- Region selection with visual overlay for screenshot capture
 
 ## User Preferences
 - Clean, minimal UI with clear information presentation
@@ -98,6 +123,23 @@ This journal documents important insights, patterns, and project-specific knowle
 - Remote Visio connectivity for distributed teams
 - Multi-document and multi-page support
 - Shape editing capabilities directly from the interface
+- Natural language interaction with Visio through AI assistants
+- Web content capture and import into Visio diagrams
+
+## MCP Server Patterns
+- Model Context Protocol implementation for AI assistant integration
+- Tool-based architecture for exposing functionality
+- Bridge layer for communicating with local API
+- Asynchronous HTTP client for API communication
+- Comprehensive error handling with structured error responses
+- Detailed logging for troubleshooting
+- Configuration through JSON and environment variables
+- Rate limiting for request throttling
+- Remote connection support for distributed environments
+- Formatted text responses for optimal AI assistant interaction
+- Tool documentation with clear parameter descriptions
+- Security considerations for local-only operation
+- Testing utilities for server verification
 
 ## Known Challenges
 - Memory usage can be high when scanning large stencil collections
@@ -113,6 +155,9 @@ This journal documents important insights, patterns, and project-specific knowle
 - FTS rebuilding is time-consuming for large databases
 - Geometry extraction is incomplete for certain complex shape types
 - JavaScript integration has browser compatibility considerations
+- Chrome extension region selection may have issues on high-DPI displays
+- MCP server requires manual configuration of AI assistant clients
+- Remote Visio setup requires careful configuration for Mac-to-Windows connection
 
 ## Evolution of Decisions
 - Started with a simple file scanner, evolved to include health analysis and temp file cleaning
@@ -127,6 +172,12 @@ This journal documents important insights, patterns, and project-specific knowle
 - Implemented database integrity checking with automatic repair
 - Enhanced error handling with comprehensive logging system
 - Added responsive design with JavaScript for better mobile experience
+- Expanded to include Chrome extension for web content capture
+- Added local API server with FastAPI for Chrome extension communication
+- Implemented MCP server for AI assistant integration
+- Preferred asyncio for MCP server to handle concurrent requests
+- Selected Model Context Protocol for AI assistant integration
+- Implemented bridge pattern for MCP-to-local-API communication
 
 ## Tool Usage Patterns
 - Streamlit for all UI components
@@ -141,6 +192,12 @@ This journal documents important insights, patterns, and project-specific knowle
 - Threading for background operations
 - TQDM for progress tracking
 - XlsxWriter for Excel export functionality
+- FastAPI for local API server
+- Manifest V3 for Chrome extension
+- JavaScript for browser-side functionality
+- HTTPX for asynchronous HTTP requests
+- MCP SDK for Model Context Protocol implementation
+- JSON for configuration and data exchange
 
 ## Common Implementation Techniques
 - Background processing for long-running tasks
@@ -163,5 +220,12 @@ This journal documents important insights, patterns, and project-specific knowle
 - Progressive disclosure of advanced features
 - State management across page reloads
 - Backup and restoration procedures for data safety
+- Bridge pattern for connecting different components
+- Asynchronous programming for responsive interfaces
+- Message passing for extension component communication
+- Tool registration for MCP server capabilities
+- Formatted text responses for AI assistant consumption
+- Error categorization for appropriate feedback
+- Environment variable overrides for configuration
 
 This journal will be updated as new patterns and insights are discovered during the project's development.
