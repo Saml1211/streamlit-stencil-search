@@ -33,3 +33,7 @@ data/*.pickle
 
 # Logs
 *.log 
+*.mdc
+
+# Temporary files
+*._*
