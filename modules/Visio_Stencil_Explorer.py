@@ -186,13 +186,14 @@ def toggle_options():
     """Toggle search options visibility"""
     st.session_state.show_filters = not st.session_state.show_filters
 
-def search_stencils_db(search_term: str, filters: dict) -> List[Dict[str, Any]]:
+def search_stencils_db(search_term: str, filters: dict, directory_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Search the stencil database using the optimized search method.
 
     Args:
         search_term (str): The term to search for in shape names.
         filters (dict): A dictionary containing filter values from session state.
+        directory_filter (Optional[str]): Path to filter stencils by.
 
     Returns:
         List[Dict[str, Any]]: A list of matching shapes with stencil info.
@@ -208,7 +209,8 @@ def search_stencils_db(search_term: str, filters: dict) -> List[Dict[str, Any]]:
             search_term=search_term,
             filters=filters,
             use_fts=use_fts,
-            limit=st.session_state.get('search_result_limit', 1000)
+            limit=st.session_state.get('search_result_limit', 1000),
+            directory_filter=directory_filter # Pass directory_filter to db method
         )
         db.close()
         return results
@@ -283,6 +285,8 @@ def update_search_term():
 def perform_search():
     """Execute search and update related state"""
     search_term = st.session_state.current_search_term
+    active_directory = st.session_state.get('active_explorer_directory') # Get the active directory
+
     if search_term:
         # Add term to search history if it's not there already
         if search_term not in st.session_state.search_history:
@@ -313,8 +317,8 @@ def perform_search():
         # Initialize results list
         results = []
 
-        # Search in stencil database
-        db_results = search_stencils_db(search_term, filters)
+        # Search in stencil database, passing the active directory filter
+        db_results = search_stencils_db(search_term, filters, directory_filter=active_directory)
         results.extend(db_results)
 
         # Search in current document if option is enabled
@@ -353,6 +357,17 @@ def main(selected_directory=None):
         Enable "Search in Current Document" in the search options to find shapes in your open Visio document.
         """)
 
+    # Determine the active directory
+    if selected_directory and 'path' in selected_directory:
+        active_directory = selected_directory['path']
+        st.session_state.active_explorer_directory = active_directory
+        st.info(f"Searching in Preset Directory: {selected_directory.get('name', active_directory)}")
+    else:
+        # Fallback if no valid selected_directory is passed
+        active_directory = st.session_state.get('active_explorer_directory', config.get("paths.stencil_directory", "./test_data"))
+        st.session_state.active_explorer_directory = active_directory
+        st.warning(f"No preset directory selected. Using default/last used: {active_directory}")
+
     # Determine column ratio based on screen width
     browser_width = st.session_state.get('browser_width', 1200)  # Default to desktop
     if browser_width < 768:  # Mobile
@@ -364,15 +379,6 @@ def main(selected_directory=None):
 
     # Create two main columns for better layout
     search_col, workspace_col = st.columns(col_ratio)
-
-    # Use the root_dir from the session state with a fallback default
-    if 'last_dir' in st.session_state:
-        root_dir = st.session_state.last_dir
-    else:
-        # Fallback to a default directory
-        root_dir = config.get("paths.stencil_directory", "./test_data")
-        # Store it in session state for next time
-        st.session_state.last_dir = root_dir
 
     # Batch Actions are now handled in the main app sidebar
 
@@ -723,7 +729,7 @@ def main(selected_directory=None):
                                     'property_value': st.session_state.filter_property_value
                                 }
                                 # Perform search immediately after setting term
-                                st.session_state.search_results = search_stencils_db(st.session_state.current_search_term, filters)
+                                st.session_state.search_results = search_stencils_db(st.session_state.current_search_term, filters, directory_filter=active_directory)
                                 # Rerun to update the input field display and results
                                 st.rerun()
 
@@ -733,17 +739,18 @@ def main(selected_directory=None):
             # Tools section - Moved to bottom of search container
             st.write("##### Tools")
             update_btn = st.button("Update Cache", key="update_btn", use_container_width=True,
-                                  help="Scan directories and update the stencil cache")
+                                  help="Scan the active directory and update the stencil cache")
 
             # Add spacing between Update Cache button and scanning status
             inject_spacer(15)
 
             # Handle scanning - Remains outside the form
             if update_btn and not st.session_state.background_scan_running:
-                if not os.path.exists(root_dir):
-                    st.error(f"Directory does not exist: {root_dir}")
+                scan_dir = st.session_state.get('active_explorer_directory') # Use the active directory
+                if not scan_dir or not os.path.exists(scan_dir):
+                    st.error(f"Active directory does not exist or is not set: {scan_dir}")
                 else:
-                    background_scan(root_dir)
+                    background_scan(scan_dir) # Pass the active directory to the scan function
 
             # Show scan progress if running - Remains outside the form
             if st.session_state.background_scan_running:
@@ -765,22 +772,22 @@ def main(selected_directory=None):
                         # On mobile, show minimal columns
                         df = pd.DataFrame([
                             {
-                                "Shape": item["shape"],
-                                "Stencil": item["stencil_name"],
+                                "Shape": item.get("shape", "N/A"),
+                                "Stencil": item.get("stencil_name", "N/A"),
                                 "Width": item.get("width", 0),
                                 "Height": item.get("height", 0)
-                            } for item in st.session_state.search_results
+                            } for item in st.session_state.search_results if isinstance(item, dict)
                         ])
                     else:  # Tablet and Desktop
                         df = pd.DataFrame([
                             {
-                                "Shape": item["shape"],
-                                "Stencil": item["stencil_name"],
-                                "Path": item["stencil_path"],
+                                "Shape": item.get("shape", "N/A"),
+                                "Stencil": item.get("stencil_name", "N/A"),
+                                "Path": item.get("stencil_path", "N/A"),
                                 "Width": item.get("width", 0),
                                 "Height": item.get("height", 0),
                                 "Properties": len(item.get("properties", {}))
-                            } for item in st.session_state.search_results
+                            } for item in st.session_state.search_results if isinstance(item, dict)
                         ])
                 else:
                     # Determine which columns to show based on screen width
@@ -789,17 +796,17 @@ def main(selected_directory=None):
                         # On mobile, show minimal columns
                         df = pd.DataFrame([
                             {
-                                "Shape": item["shape"],
-                                "Stencil": item["stencil_name"]
-                            } for item in st.session_state.search_results
+                                "Shape": item.get("shape", "N/A"),
+                                "Stencil": item.get("stencil_name", "N/A")
+                            } for item in st.session_state.search_results if isinstance(item, dict)
                         ])
                     else:  # Tablet and Desktop
                         df = pd.DataFrame([
                             {
-                                "Shape": item["shape"],
-                                "Stencil": item["stencil_name"],
-                                "Path": item["stencil_path"]
-                            } for item in st.session_state.search_results
+                                "Shape": item.get("shape", "N/A"),
+                                "Stencil": item.get("stencil_name", "N/A"),
+                                "Path": item.get("stencil_path", "N/A")
+                            } for item in st.session_state.search_results if isinstance(item, dict)
                         ])
 
                 # Show the results with improved styling

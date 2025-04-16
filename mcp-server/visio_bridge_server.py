@@ -12,6 +12,7 @@ import json
 import logging
 import asyncio
 import traceback
+import argparse
 from typing import Any, Dict, List, Optional, Union
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -30,12 +31,10 @@ logger = logging.getLogger("visio_bridge_mcp")
 # Initialize FastMCP server
 mcp = FastMCP("visio-bridge")
 
-# Constants
-# Replace WINDOWS_IP with the actual IP address of your Windows machine
-LOCAL_API_BASE = os.environ.get("VISIO_BRIDGE_API_URL", "http://WINDOWS_IP:5100")
-# Replace API_KEY with the API key displayed when starting the server on Windows
-API_KEY = os.environ.get("VISIO_BRIDGE_API_KEY", "YOUR_API_KEY_HERE")
-DEFAULT_TIMEOUT = 30.0  # seconds
+# Global variables for configuration (will be set in main)
+LOCAL_API_BASE = None
+API_KEY = None
+API_TIMEOUT = None
 
 # ---- Bridge Layer ----
 
@@ -43,7 +42,7 @@ async def make_api_request(
     endpoint: str,
     method: str = "GET",
     data: Optional[Dict[str, Any]] = None,
-    timeout: float = DEFAULT_TIMEOUT
+    timeout: float = API_TIMEOUT
 ) -> Dict[str, Any]:
     """Make a request to the local Visio Bridge API with proper error handling."""
     url = f"{LOCAL_API_BASE}/{endpoint.lstrip('/')}"
@@ -119,6 +118,7 @@ async def import_text_to_visio(text_content: str, metadata: Optional[Dict[str, A
             return f"Failed to import text: {result.get('message', 'Unknown error')}"
     except Exception as e:
         logger.error(f"Error importing text: {str(e)}", exc_info=True)
+        # Return the specific error message raised by make_api_request if possible
         return f"Error importing text to Visio: {str(e)}"
 
 @mcp.tool()
@@ -303,12 +303,44 @@ async def check_visio_connection() -> str:
             return f"Visio Bridge API responded but with unexpected message: {result.get('message', 'No message')}"
     except Exception as e:
         logger.error(f"Error checking Visio connection: {str(e)}", exc_info=True)
-        return f"Error: Could not connect to Visio Bridge API. Make sure the local API server is running: {str(e)}"
+        return f"Error checking Visio connection: {str(e)}"
 
 # ---- Main Execution ----
 
 if __name__ == "__main__":
-    logger.info("Starting Visio Bridge MCP Server")
+    # --- Argument Parsing --- 
+    parser = argparse.ArgumentParser(description="Visio Bridge MCP Server")
+    parser.add_argument(
+        "--url",
+        type=str,
+        default=os.environ.get("VISIO_BRIDGE_API_URL", "http://127.0.0.1:5100"), # Default to localhost if no arg/env
+        help="URL of the Local Visio Bridge API (e.g., http://192.168.1.100:5100)"
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=os.environ.get("VISIO_BRIDGE_API_KEY", "YOUR_API_KEY_HERE"), # Default placeholder
+        help="API Key for the Local Visio Bridge API"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.environ.get("VISIO_BRIDGE_API_TIMEOUT", "30.0")),
+        help="Request timeout in seconds for contacting the Local API"
+    )
+    args = parser.parse_args()
+
+    # --- Set Global Configuration --- 
+    LOCAL_API_BASE = args.url
+    API_KEY = args.api_key
+    API_TIMEOUT = args.timeout
+
+    logger.info(f"Starting Visio Bridge MCP Server, connecting to API at: {LOCAL_API_BASE}")
+    if API_KEY == "YOUR_API_KEY_HERE":
+        logger.warning("Using default placeholder API Key. Ensure --api-key or VISIO_BRIDGE_API_KEY is set correctly!")
+    else:
+        logger.info("Using provided API Key.")
+    logger.info(f"API connection timeout set to: {API_TIMEOUT} seconds")
 
     # Check if the local API is available before starting
     try:

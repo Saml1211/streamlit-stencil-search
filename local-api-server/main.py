@@ -51,7 +51,8 @@ origins = [
     "http://localhost:3000", # Allow Next.js dev server
     "http://localhost",
     "http://127.0.0.1",
-    "*",  # Allow all origins when using API key authentication
+    "chrome-extension://*", # Allow any unpacked extension (Adjust for prod)
+    # "*",  # Allow all origins when using API key authentication - REMOVED FOR MORE SPECIFICITY
 ]
 
 app.add_middleware(

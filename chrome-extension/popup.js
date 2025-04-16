@@ -3,7 +3,7 @@
 console.log("Popup script loaded.");
 
 // Global-like variable to hold captured data (text or image data URL)
-// Note: State management will need improvement if popup closes during async operations.
+// Will be loaded from chrome.storage.local on popup open
 let capturedData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -20,6 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.textContent = 'Initiating region selection...';
         previewDiv.innerHTML = ''; // Clear previous preview
         capturedData = null;
+        // Clear stored data as well when initiating a new capture
+        chrome.storage.local.remove('lastCapturedData', () => {
+            console.log('Cleared previous captured data from storage.');
+        });
 
         // Get the current active tab to inject the script into
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -50,8 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listener for Send Button ---
     sendButton.addEventListener('click', () => {
-        // Note: `capturedData` might be stale if the popup was closed and reopened.
-        // This needs refinement using chrome.storage.local later.
+        // Now relies on capturedData being loaded from storage or set by message listener
         if (!capturedData) {
              statusDiv.textContent = 'Nothing captured to send.';
              return;
@@ -80,6 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
                    statusDiv.textContent = 'Sent successfully!';
                    // Optionally close popup after success
                    setTimeout(() => window.close(), 1500);
+                   // Clear storage after successful send
+                   chrome.storage.local.remove('lastCapturedData', () => {
+                       console.log('Cleared captured data from storage after sending.');
+                   });
                } else {
                    statusDiv.textContent = `Send failed: ${response ? response.message : 'Unknown error'}`;
                    console.error("Failed response from sendToApi:", response);
@@ -97,14 +104,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // If the user reopens the popup, this helps display the result.
     if (request.action === "displayCapturedRegion" && request.imageDataUrl) {
         console.log("Received displayCapturedRegion message.");
-
-        // Store data for potential later use by the send button
-        // Using session storage which persists only while the extension is running
-        // Use chrome.storage.local for persistence across browser sessions if needed
-        sessionStorage.setItem('lastCapturedData', JSON.stringify({
+        const dataToStore = {
             type: 'image',
             content: request.imageDataUrl
-        }));
+        };
+
+        // Store data using chrome.storage.local
+        chrome.storage.local.set({ 'lastCapturedData': dataToStore }, () => {
+            if (chrome.runtime.lastError) {
+                console.error("Error saving captured image data to storage:", chrome.runtime.lastError);
+            } else {
+                console.log("Captured image data saved to storage.");
+                // Update the local variable immediately for the currently open popup instance
+                capturedData = dataToStore;
+            }
+        });
 
         // Try to update the UI if the popup happens to be open when message arrives
         const previewDiv = document.getElementById('content-preview');
@@ -122,10 +136,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "displayTextData" && request.text) {
         // Similar handler for text data if needed later (e.g., from context menu)
         console.log("Received displayTextData message.");
-         sessionStorage.setItem('lastCapturedData', JSON.stringify({
+        const dataToStore = {
             type: 'text',
             content: request.text
-        }));
+        };
+        // Store data using chrome.storage.local
+        chrome.storage.local.set({ 'lastCapturedData': dataToStore }, () => {
+             if (chrome.runtime.lastError) {
+                 console.error("Error saving captured text data to storage:", chrome.runtime.lastError);
+             } else {
+                 console.log("Captured text data saved to storage.");
+                 // Update the local variable immediately for the currently open popup instance
+                 capturedData = dataToStore;
+             }
+         });
+
          const previewDiv = document.getElementById('content-preview');
          const statusDiv = document.getElementById('status');
          if (previewDiv && statusDiv) {
@@ -136,30 +161,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-// Check session storage when popup opens to potentially restore last captured data
+// Check chrome.storage.local when popup opens to potentially restore last captured data
 document.addEventListener('DOMContentLoaded', () => {
-     const lastDataStr = sessionStorage.getItem('lastCapturedData');
-     if (lastDataStr) {
-         try {
-             const lastData = JSON.parse(lastDataStr);
-             capturedData = lastData; // Restore for the send button
+    const previewDiv = document.getElementById('content-preview');
+    const statusDiv = document.getElementById('status');
 
-             const previewDiv = document.getElementById('content-preview');
-             const statusDiv = document.getElementById('status');
+    chrome.storage.local.get('lastCapturedData', (result) => {
+        if (chrome.runtime.lastError) {
+            console.error("Error retrieving data from storage:", chrome.runtime.lastError);
+            return;
+        }
 
-             if (lastData.type === 'image' && previewDiv) {
-                 const img = document.createElement('img');
-                 img.src = lastData.content;
-                 previewDiv.innerHTML = '';
-                 previewDiv.appendChild(img);
-                 if(statusDiv) statusDiv.textContent = 'Last captured region loaded. Ready to send.';
-             } else if (lastData.type === 'text' && previewDiv) {
-                  previewDiv.textContent = lastData.content;
-                  if(statusDiv) statusDiv.textContent = 'Last captured text loaded. Ready to send.';
-             }
-         } catch (e) {
-             console.error("Error parsing sessionStorage data:", e);
-             sessionStorage.removeItem('lastCapturedData'); // Clear invalid data
-         }
-     }
+        const lastData = result.lastCapturedData;
+
+        if (lastData) {
+            console.log("Restoring captured data from storage:", lastData.type);
+            capturedData = lastData; // Restore for the send button
+
+            if (lastData.type === 'image' && previewDiv) {
+                const img = document.createElement('img');
+                img.src = lastData.content;
+                previewDiv.innerHTML = '';
+                previewDiv.appendChild(img);
+                if (statusDiv) statusDiv.textContent = 'Last captured region loaded. Ready to send.';
+            } else if (lastData.type === 'text' && previewDiv) {
+                previewDiv.textContent = lastData.content;
+                if (statusDiv) statusDiv.textContent = 'Last captured text loaded. Ready to send.';
+            }
+        } else {
+            console.log("No previous captured data found in storage.");
+        }
+    });
 });

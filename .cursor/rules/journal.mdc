@@ -1,3 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
 # Visio Stencil Search Project Journal
 
 ## Project Overview
@@ -32,6 +37,8 @@ This journal documents important insights, patterns, and project-specific knowle
 - Version control supports managed development process
 - Asynchronous programming for the MCP server to handle concurrent requests
 - Tool-based architecture for MCP server to expose functionality to AI assistants
+- When launching background Python scripts via `run_terminal_cmd` in PowerShell, prefer passing critical configurations (like network URLs) via command-line arguments rather than attempting to set environment variables within the same command string, as propagation can be unreliable.
+- Ensure the correct Python executable from the relevant virtual environment (`venv\Scripts\python.exe`) is used when running scripts via `run_terminal_cmd`, particularly after dependency installations or when troubleshooting module errors.
 
 ### Streamlit Patterns
 - Each page has its own file in the `pages/` directory with a numerical prefix for ordering
@@ -124,7 +131,7 @@ This journal documents important insights, patterns, and project-specific knowle
 ## MCP Server Patterns
 - Model Context Protocol implementation for AI assistant integration
 - Tool-based architecture for exposing functionality
-- Bridge layer for communicating with local API
+- Bridge layer for communicating with local API server
 - Asynchronous HTTP client for API communication
 - Comprehensive error handling with structured error responses
 - Detailed logging for troubleshooting
@@ -153,6 +160,7 @@ This journal documents important insights, patterns, and project-specific knowle
 - Chrome extension region selection may have issues on high-DPI displays
 - MCP server requires manual configuration of AI assistant clients
 - Remote Visio setup requires careful configuration for Mac-to-Windows connection
+- Invoking MCP tools (e.g., `mcp_visio_bridge_check_visio_connection`) via the assistant's environment can sometimes fail with network resolution errors (`getaddrinfo failed`), even when direct checks (`curl`) or the MCP server's own startup checks succeed. This suggests potential differences in network stack interaction or resolution within the assistant's tool execution context.
 
 ## Evolution of Decisions
 - Started with a simple file scanner, evolved to include health analysis and temp file cleaning

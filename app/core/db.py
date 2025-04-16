@@ -95,7 +95,7 @@ class StencilDatabase:
                             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, search_term TEXT,
                             filters TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_saved_searches_name ON saved_searches(name)")
-            # Favorites Table (Using WHERE clause for UNIQUE constraints - requires newer SQLite versions)
+            # Favorites Table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS favorites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,10 +104,11 @@ class StencilDatabase:
                     shape_id INTEGER, -- NULL if item_type is 'stencil'
                     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (stencil_path) REFERENCES stencils(path) ON DELETE CASCADE,
-                    FOREIGN KEY (shape_id) REFERENCES shapes(id) ON DELETE CASCADE,
-                    UNIQUE (stencil_path) WHERE item_type = 'stencil',
-                    UNIQUE (shape_id) WHERE item_type = 'shape'
+                    FOREIGN KEY (shape_id) REFERENCES shapes(id) ON DELETE CASCADE
                 )""")
+            # Create partial unique indexes separately
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_fav_stencil_unique ON favorites(stencil_path) WHERE item_type = 'stencil'")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_fav_shape_unique ON favorites(shape_id) WHERE item_type = 'shape' AND shape_id IS NOT NULL") # Added shape_id IS NOT NULL check
             conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_stencil_path ON favorites(stencil_path)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_shape_id ON favorites(shape_id) WHERE shape_id IS NOT NULL")
 
@@ -660,56 +661,165 @@ class StencilDatabase:
             return True
         except Exception as recovery_error: print(f"Database recovery process failed: {recovery_error}"); traceback.print_exc(); return self._recreate_tables()
 
-    def search_shapes(self, search_term: str, filters: dict = None, use_fts: bool = True, limit: int = 20, offset: int = 0):
-        """ Search for shapes with pagination and returning total count. """
+    def search_shapes(self, search_term: str, filters: dict = None, use_fts: bool = True, limit: int = 20, offset: int = 0, directory_filter: Optional[str] = None):
+        """Search shapes, optionally using FTS, with filters and pagination."""
         with self._lock:
             conn = self._get_conn()
+            cursor = conn.cursor()
+            query_params = {}
+            filter_clauses = []
+
+            # Normalize the directory filter path for reliable matching
+            normalized_directory_filter = None
+            if directory_filter:
+                normalized_directory_filter = os.path.normpath(directory_filter)
+                # Append wildcard for LIKE
+                query_params['directory_filter_pattern'] = f"{normalized_directory_filter}%"
+                # Add clause to filter by stencil path
+                filter_clauses.append("stencils.path LIKE :directory_filter_pattern")
+
+            # --- Standard Filters ---
+            if filters:
+                if filters.get('show_favorites'):
+                    # Join with favorites table and filter by item_type = 'stencil'
+                    filter_clauses.append("stencils.path IN (SELECT stencil_path FROM favorites WHERE item_type = 'stencil')")
+
+                # --- Date Filters ---
+                if filters.get('date_start'):
+                    query_params['date_start'] = filters['date_start'].isoformat()
+                    filter_clauses.append("stencils.last_modified >= :date_start")
+                if filters.get('date_end'):
+                    # Add one day and format to include the entire end day
+                    end_date_inclusive = filters['date_end'] + timedelta(days=1)
+                    query_params['date_end'] = end_date_inclusive.isoformat()
+                    filter_clauses.append("stencils.last_modified < :date_end")
+
+                # --- Size and Shape Count Filters (on stencils table) ---
+                if filters.get('min_size') is not None and filters['min_size'] > 0:
+                    query_params['min_size'] = filters['min_size']
+                    filter_clauses.append("stencils.file_size >= :min_size")
+                if filters.get('max_size') is not None and filters['max_size'] > 0:
+                    query_params['max_size'] = filters['max_size']
+                    filter_clauses.append("stencils.file_size <= :max_size")
+                if filters.get('min_shapes') is not None and filters['min_shapes'] > 0:
+                    query_params['min_shapes'] = filters['min_shapes']
+                    filter_clauses.append("stencils.shape_count >= :min_shapes")
+                if filters.get('max_shapes') is not None and filters['max_shapes'] > 0:
+                    query_params['max_shapes'] = filters['max_shapes']
+                    filter_clauses.append("stencils.shape_count <= :max_shapes")
+
+                # --- Shape Metadata Filters (on shapes table) ---
+                if filters.get('min_width') is not None and filters['min_width'] > 0:
+                    query_params['min_width'] = filters['min_width']
+                    filter_clauses.append("shapes.width >= :min_width")
+                if filters.get('max_width') is not None and filters['max_width'] > 0:
+                    query_params['max_width'] = filters['max_width']
+                    filter_clauses.append("shapes.width <= :max_width")
+                if filters.get('min_height') is not None and filters['min_height'] > 0:
+                    query_params['min_height'] = filters['min_height']
+                    filter_clauses.append("shapes.height >= :min_height")
+                if filters.get('max_height') is not None and filters['max_height'] > 0:
+                    query_params['max_height'] = filters['max_height']
+                    filter_clauses.append("shapes.height <= :max_height")
+                if filters.get('has_properties'):
+                    # Check if properties JSON is not NULL, empty object, or empty array
+                    filter_clauses.append("shapes.properties IS NOT NULL AND shapes.properties != '' AND shapes.properties != '[]' AND shapes.properties != '{}'")
+
+                # --- Property Name/Value Filters (requires JSON parsing) ---
+                # NOTE: These might be slow on large datasets without specific JSON indexing
+                # Consider adding generated columns or specific indexing if performance is critical.
+                prop_name = filters.get('property_name')
+                prop_value = filters.get('property_value')
+                if prop_name:
+                    # Check if the key exists in the properties JSON
+                    query_params['prop_name_pattern'] = f'%"{prop_name}"%:'
+                    filter_clauses.append("shapes.properties LIKE :prop_name_pattern")
+                if prop_value:
+                    # Check if the value exists in the properties JSON
+                    query_params['prop_value_pattern'] = f'%:{json.dumps(prop_value)}%'
+                    filter_clauses.append("shapes.properties LIKE :prop_value_pattern")
+
+            # Construct WHERE clause
+            where_clause = " AND ".join(filter_clauses) if filter_clauses else "1=1" # Use 1=1 if no filters
+
+            # --- FTS Search ---
+            if use_fts:
+                query_params['search_term_fts'] = search_term
+                # FTS query needs to join back to shapes and stencils to apply standard filters
+                # Use snippet function for highlighting
+                query = f"""
+                    SELECT
+                        s.id AS shape_id,
+                        s.name AS shape_name,
+                        st.name AS stencil_name,
+                        st.path AS stencil_path,
+                        s.width AS width,
+                        s.height AS height,
+                        s.geometry AS geometry,
+                        s.properties AS properties,
+                        snippet(shapes_fts, 1, '[HL]', '[/HL]', '...', 15) AS highlighted_name
+                    FROM shapes_fts f
+                    JOIN shapes s ON f.rowid = s.id
+                    JOIN stencils st ON s.stencil_path = st.path
+                    WHERE shapes_fts MATCH :search_term_fts AND {where_clause}
+                    ORDER BY rank
+                    LIMIT :limit OFFSET :offset
+                """
+            # --- Standard LIKE Search ---
+            else:
+                query_params['search_term_like'] = f"%{search_term}%"
+                query = f"""
+                    SELECT
+                        s.id AS shape_id,
+                        s.name AS shape_name,
+                        st.name AS stencil_name,
+                        st.path AS stencil_path,
+                        s.width AS width,
+                        s.height AS height,
+                        s.geometry AS geometry,
+                        s.properties AS properties,
+                        NULL AS highlighted_name -- No highlight for standard search
+                    FROM shapes s
+                    JOIN stencils st ON s.stencil_path = st.path
+                    WHERE s.name LIKE :search_term_like AND {where_clause}
+                    ORDER BY st.name, s.name
+                    LIMIT :limit OFFSET :offset
+                """
+
+            # Add limit and offset parameters
+            query_params['limit'] = limit
+            query_params['offset'] = offset
+
+            # print(f"Executing search query:\n{query}\nParams: {query_params}") # Debugging line
             try:
-                has_fts = False
-                try: fts_count = conn.execute("SELECT COUNT(*) FROM shapes_fts").fetchone()[0]; has_fts = fts_count > 0
-                except sqlite3.OperationalError: pass
-                use_fts_final = use_fts and has_fts and search_term
-
-                select_clause = "SELECT s.id as shape_id, s.name as shape_name, st.name as stencil_name, s.stencil_path"
-                from_clause = "FROM shapes s JOIN stencils st ON s.stencil_path = st.path"
-                count_select = "SELECT COUNT(s.id)"
-                where_clause = ""; params = []
-
-                if use_fts_final:
-                    select_clause += ", fts.rank, snippet(shapes_fts, 1, '<mark>', '</mark>', '...', 10) as snippet"
-                    from_clause = "FROM shapes_fts fts JOIN shapes s ON fts.rowid = s.id JOIN stencils st ON s.stencil_path = st.path"
-                    where_clause = "WHERE shapes_fts MATCH ?"
-                    params.append(f'"{search_term}"*')
-                elif search_term:
-                    where_clause = "WHERE s.name LIKE ?"
-                    params.append(f'%{search_term}%')
-
-                filter_clauses = []; filter_params = []
-                if filters:
-                     if filters.get('stencil_path'): filter_clauses.append("s.stencil_path = ?"); filter_params.append(filters['stencil_path'])
-                if filter_clauses:
-                    if where_clause: where_clause += " AND " + " AND ".join(filter_clauses)
-                    else: where_clause = "WHERE " + " AND ".join(filter_clauses)
-                    params.extend(filter_params)
-
-                count_query = f"{count_select} {from_clause} {where_clause}"
-                total_count = conn.execute(count_query, list(params)).fetchone()[0]
-
-                order_by_clause = "ORDER BY rank DESC, st.name, s.name" if use_fts_final else "ORDER BY st.name, s.name"
-                pagination_clause = "LIMIT ? OFFSET ?"
-                params.extend([limit, offset])
-                final_query = f"{select_clause} {from_clause} {where_clause} {order_by_clause} {pagination_clause}"
-
-                cursor = conn.execute(final_query, params)
-                results = [dict(row) for row in cursor.fetchall()]
-                print(f"--- search_shapes: {len(results)} results, total {total_count} ---")
-                return results, total_count
+                cursor.execute(query, query_params)
+                results = [
+                    {
+                        **dict(row), # Convert row object to dict
+                        'geometry': json.loads(row['geometry']) if row['geometry'] else [],
+                        'properties': json.loads(row['properties']) if row['properties'] else {}
+                    }
+                    for row in cursor.fetchall()
+                ]
+                # print(f"--- search_shapes: {len(results)} results, total {limit} --- ") # Debugging line
+                return results
             except sqlite3.OperationalError as e:
-                print(f"Database error in search_shapes: {e}")
-                if "malformed" in str(e) or "no such table" in str(e):
-                    if self._recover_database(): return self.search_shapes(search_term, filters, use_fts, limit, offset)
-                raise
-            except Exception as e: print(f"Unexpected error in search_shapes: {e}"); traceback.print_exc(); raise
+                print(f"!!! Database search error: {e}")
+                if "fts5" in str(e).lower():
+                    print("FTS index might be corrupted or missing. Attempting to rebuild.")
+                    if self.rebuild_fts_index():
+                        print("FTS index rebuilt. Retrying search...")
+                        return self.search_shapes(search_term, filters, use_fts, limit, offset, directory_filter)
+                    else:
+                        print("FTS index rebuild failed. Falling back to standard search.")
+                        return self.search_shapes(search_term, filters, False, limit, offset, directory_filter)
+                else:
+                    traceback.print_exc() # Print detailed traceback for other operational errors
+                    return [] # Return empty list on error
+            except Exception as e: # Catch other potential errors
+                print(f"!!! Unexpected search error: {e}")
+                traceback.print_exc()
+                return []
 
     def get_shape_by_id(self, shape_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed information for a single shape by its ID."""

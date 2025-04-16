@@ -1,86 +1,34 @@
-# Active Context: Visio Bridge Integration Suite (Updated: 2025-07-10)
+# Active Context: Visio Bridge Integration Suite (Updated: CURRENT_DATE)
 
 ## Current Work Focus
+Finalizing the core integration components based on the plan for request `req-4`. Focus is currently on verifying the end-to-end connectivity between the MCP client, MCP server, Local API server, and Visio, before proceeding to packaging.
 
-The project has expanded to include an MCP (Model Context Protocol) server implementation that enables AI assistants like Claude to interact with Visio through the existing local API. This new component bridges the gap between AI assistants and Visio, allowing for natural language interaction with the stencil database and Visio operations.
+## Recent Changes (Request req-4)
 
-The implementation of the MCP server is now complete, with all necessary tools implemented for AI assistants to interact with Visio, including text import, image import, shape search, and more.
-
-The previous focus on implementing core Visio automation logic within `local-api-server/visio_integration.py` remains important, but is now complemented by the completed MCP server integration.
-
-## Recent Changes
-
-### MCP Server Implementation (July 2025)
-
-- Created `mcp-server` directory with MCP server implementation (`visio_bridge_server.py`)
-- Implemented bridge layer to communicate with the local API server
-- Added tools for text import, image import, shape search, and more
-- Created comprehensive documentation in the `docs` directory
-  - Added MCP-Server-Documentation.md with full server details
-  - Added MCP-Server-QuickStart.md guide
-  - Added MCP-Server-Architecture.md technical breakdown
-  - Added Remote-Visio-Setup.md for Mac users
-- Updated project README to include MCP server information
-- Added configuration files for the MCP server
-- Created startup scripts for both Windows (.bat) and Unix (.sh)
-- Implemented test script for verifying server functionality
-- Set up remote connection support via configuration (setup_remote.sh)
-
-### Chrome Extension & Local API (Request req-8 Summary)
-
-- Created `chrome-extension` directory with Manifest V3, service worker, popup, content scripts
-- Implemented context menu for text capture
-- Implemented region selection screenshot mechanism
-- Established `fetch` communication from the extension's service worker to the local API
-- Created `local-api-server` directory with FastAPI (`main.py`)
-- Implemented `/import` API endpoint with Pydantic validation
-- Created `visio_integration.py` stub with basic COM connection function
+*   **Phase 1 Completed (`task-15`):** Implemented Visio COM logic for text and image import in `visio_integration.py`, including handling defaults, units, and temporary files.
+*   **Phase 2 Completed (`task-16`):** Updated FastAPI CORS origins in `main.py` to allow `chrome-extension://*` for development.
+*   **Phase 3 Completed (`task-17`):** Refactored Chrome Extension state (`popup.js`) to use `chrome.storage.local` for persistence.
+*   **Phase 4 Completed (`task-18`):** Refined MCP server (`visio_bridge_server.py`) configuration (configurable timeout, added command-line args for URL/API Key).
+*   **Phase 5 In Progress (`task-19`):** Successfully started background processes for `local-api-server` and `mcp-server` after resolving dependency and command execution issues. Created `manual_verification_phase5.md` outlining steps for manual end-to-end testing using an MCP client.
 
 ## Active Decisions
 
-### MCP Server
-
-- **Protocol**: Model Context Protocol (MCP) selected for AI assistant integration
-- **Implementation**: Python MCP SDK used for server implementation
-- **Bridge Pattern**: Bridge layer implemented to communicate with local API
-- **Tool Design**: Tools designed to match existing API endpoints
-- **Error Handling**: Comprehensive error handling with detailed logging
-- **Configuration**: JSON-based configuration for server settings
-- **Security**: Rate limiting implemented to prevent abuse
-- **Remote Support**: Optional configuration for connecting to remote Windows machines
-
-### Chrome Extension & Local API
-
-- **Screenshot Method**: Region selection implemented instead of simple capture + crop
-- **Cropping Location**: Performed in the service worker using `OffscreenCanvas`
-- **API Framework**: FastAPI selected for the local server
-- **Visio Integration**: Initial focus on PyWin32 COM (Windows only)
-- **Error Handling**: Basic error handling added for COM connection, API calls, and script injection
-- **State Management**: Basic state handled via messages; `sessionStorage` used in popup
+*   **MCP Server Config:** Confirmed using command-line arguments (`--url`, `--api-key`, `--timeout`) for MCP server configuration is more reliable than environment variables when launching via `run_terminal_cmd`.
+*   **Task Order:** Proceeding with dependency-based task order for request `req-4`.
+*   **Phase 5 Verification:** Manual verification using an MCP client is necessary due to limitations in automated testing of the full stack via available tools.
 
 ## Current Tasks
 
-- MCP Server implementation for Visio Bridge is complete
-- Documentation for MCP Server has been created
-- README has been updated to include MCP Server information
+*   **Pending Manual Verification:** User needs to perform the steps in `manual_verification_phase5.md` to confirm end-to-end functionality (MCP Client -> MCP Server -> Local API -> Visio).
 
 ## Next Steps (High-Level)
 
-1. **Test MCP Server with Claude**: Test the MCP server with Claude for Desktop to verify functionality.
-2. **Implement Visio Text Insertion**: Complete the implementation of `visio_integration.import_text_to_visio`.
-3. **Implement Visio Image Insertion**: Complete the implementation of `visio_integration.import_image_to_visio`.
-4. **Enhance MCP Server**: Add more tools and capabilities to the MCP server based on user feedback.
-5. **Packaging**: Create executable packages for both the local API server and MCP server.
-6. **Testing**: Conduct end-to-end testing on Windows machines with Visio installed.
+1.  **Approve Phase 5 (`task-19`)**: User to approve after successful manual verification.
+2.  **Execute Phase 6 (`task-20`)**: Begin packaging the `local-api-server` using PyInstaller, addressing any `pywin32` bundling issues.
+3.  Complete any remaining tasks from the original plan (`req-4`).
 
 ## Technical Considerations
 
-- Handling different Visio versions/states via COM
-- Managing temporary files for image insertion securely and reliably
-- Ensuring correct thread handling for COM objects if FastAPI runs workers
-- Packaging the Python server with PyInstaller, including PyWin32 DLLs
-- Configuring Claude for Desktop to work with the MCP server
-- Securing the MCP server with appropriate authentication and authorization
-- Optimizing performance for large stencil databases
-- Handling error cases gracefully in both the local API and MCP server
-- Testing cross-platform behavior with remote Visio server connections
+*   Reliability of starting/configuring background processes via `run_terminal_cmd` needs careful syntax (using `venv` python, correct paths, command-line args preferred over env vars set in the same command string).
+*   The difference in network resolution (`getaddrinfo`) between direct script execution and execution triggered via MCP tool calls needs further investigation if manual tests also fail.
+*   PyInstaller packaging for applications using `pywin32` often requires specific hooks or hidden import configurations.

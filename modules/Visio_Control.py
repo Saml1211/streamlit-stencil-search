@@ -263,10 +263,9 @@ def main(selected_directory=None):
                 with new_doc_col1:
                     new_doc_name = st.text_input(
                         "Document Name",
-                        value=st.session_state.new_doc_name,
-                        key="new_doc_name_input"
+                        value=st.session_state.get("new_doc_name", "New Visio Document"),
+                        key="new_doc_name"
                     )
-                    st.session_state.new_doc_name = new_doc_name
 
                 with new_doc_col2:
                     st.write("")  # Spacing
@@ -348,10 +347,9 @@ def main(selected_directory=None):
                         with new_page_col1:
                             new_page_name = st.text_input(
                                 "Page Name",
-                                value=st.session_state.new_page_name,
-                                key="new_page_name_input"
+                                value=st.session_state.get("new_page_name", "Page-1"),
+                                key="new_page_name"
                             )
-                            st.session_state.new_page_name = new_page_name
 
                         with new_page_col2:
                             st.write("")  # Spacing

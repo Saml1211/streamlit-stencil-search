@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from typing import Optional
 from tqdm import tqdm
 from .db import StencilDatabase
 
