@@ -145,6 +145,20 @@ export interface IntegrationStatus {
     error_message?: string | null;
 }
 
+export interface DirectoryPath {
+    id: number;
+    path: string;
+    name: string;
+    is_active: boolean;
+}
+
+export interface DirectoryPath {
+    id: number;
+    path: string;
+    name: string;
+    is_active: boolean;
+}
+
 export interface ImportResponse {
     status: string;
     message?: string | null;
@@ -186,6 +200,11 @@ export interface ImportPayload {
 export interface CommandPayload {
     command: string;
     params?: Record<string, any> | null;
+}
+
+export interface DirectoryPathPayload {
+    path: string;
+    name?: string;
 }
 
 
@@ -473,7 +492,183 @@ export function useImportContent(
       return handleApiResponse<ImportResponse>(res);
     },
      ...options,
-  });
+ });
+}
+
+// --- Directory Paths ---
+export function useDirectoryPaths(
+ options?: Omit<UseQueryOptions<DirectoryPath[], ApiError>, 'queryKey' | 'queryFn'>
+) {
+ return useQuery<DirectoryPath[], ApiError>({
+     queryKey: ['directoryPaths'],
+     queryFn: async () => {
+         const res = await fetch(`${API_BASE}/directories`);
+         return handleApiResponse<DirectoryPath[]>(res);
+     },
+     staleTime: STALE_TIME_DEFAULT,
+     ...options,
+ });
+}
+
+export function useActiveDirectory(
+ options?: Omit<UseQueryOptions<DirectoryPath | null, ApiError>, 'queryKey' | 'queryFn'>
+) {
+ return useQuery<DirectoryPath | null, ApiError>({
+     queryKey: ['activeDirectory'],
+     queryFn: async () => {
+         const res = await fetch(`${API_BASE}/directories/active`);
+         return handleApiResponse<DirectoryPath | null>(res);
+     },
+     staleTime: STALE_TIME_SHORT, // Check more frequently
+     ...options,
+ });
+}
+
+export function useAddDirectory(
+ options?: Omit<UseMutationOptions<DirectoryPath, ApiError, DirectoryPathPayload>, 'mutationFn'>
+) {
+ const queryClient = useQueryClient();
+ return useMutation<DirectoryPath, ApiError, DirectoryPathPayload>({
+     mutationFn: async (payload) => {
+         const res = await fetch(`${API_BASE}/directories`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(payload),
+         });
+         return handleApiResponse<DirectoryPath>(res);
+     },
+     onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['directoryPaths'] });
+         queryClient.invalidateQueries({ queryKey: ['activeDirectory'] });
+     },
+     ...options,
+ });
+}
+
+export function useSetActiveDirectory(
+ options?: Omit<UseMutationOptions<DirectoryPath, ApiError, number>, 'mutationFn'>
+) {
+ const queryClient = useQueryClient();
+ return useMutation<DirectoryPath, ApiError, number>({
+     mutationFn: async (directoryId) => {
+         const res = await fetch(`${API_BASE}/directories/${directoryId}/activate`, {
+             method: 'PUT',
+         });
+         return handleApiResponse<DirectoryPath>(res);
+     },
+     onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['directoryPaths'] });
+         queryClient.invalidateQueries({ queryKey: ['activeDirectory'] });
+     },
+     ...options,
+ });
+}
+
+export function useRemoveDirectory(
+ options?: Omit<UseMutationOptions<void, ApiError, number>, 'mutationFn'>
+) {
+ const queryClient = useQueryClient();
+ return useMutation<void, ApiError, number>({
+     mutationFn: async (directoryId) => {
+         const res = await fetch(`${API_BASE}/directories/${directoryId}`, {
+             method: 'DELETE',
+         });
+         return handleApiResponse<void>(res);
+     },
+     onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['directoryPaths'] });
+         queryClient.invalidateQueries({ queryKey: ['activeDirectory'] });
+     },
+     ...options,
+ });
+}
+
+// --- Directory Paths ---
+export function useDirectoryPaths(
+ options?: Omit<UseQueryOptions<DirectoryPath[], ApiError>, 'queryKey' | 'queryFn'>
+) {
+ return useQuery<DirectoryPath[], ApiError>({
+     queryKey: ['directoryPaths'],
+     queryFn: async () => {
+         const res = await fetch(`${API_BASE}/directories`);
+         return handleApiResponse<DirectoryPath[]>(res);
+     },
+     staleTime: STALE_TIME_DEFAULT,
+     ...options,
+ });
+}
+
+export function useActiveDirectory(
+ options?: Omit<UseQueryOptions<DirectoryPath | null, ApiError>, 'queryKey' | 'queryFn'>
+) {
+ return useQuery<DirectoryPath | null, ApiError>({
+     queryKey: ['activeDirectory'],
+     queryFn: async () => {
+         const res = await fetch(`${API_BASE}/directories/active`);
+         return handleApiResponse<DirectoryPath | null>(res);
+     },
+     staleTime: STALE_TIME_SHORT, // Check more frequently
+     ...options,
+ });
+}
+
+export function useAddDirectory(
+ options?: Omit<UseMutationOptions<DirectoryPath, ApiError, DirectoryPathPayload>, 'mutationFn'>
+) {
+ const queryClient = useQueryClient();
+ return useMutation<DirectoryPath, ApiError, DirectoryPathPayload>({
+     mutationFn: async (payload) => {
+         const res = await fetch(`${API_BASE}/directories`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(payload),
+         });
+         return handleApiResponse<DirectoryPath>(res);
+     },
+     onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['directoryPaths'] });
+         queryClient.invalidateQueries({ queryKey: ['activeDirectory'] });
+     },
+     ...options,
+ });
+}
+
+export function useSetActiveDirectory(
+ options?: Omit<UseMutationOptions<DirectoryPath, ApiError, number>, 'mutationFn'>
+) {
+ const queryClient = useQueryClient();
+ return useMutation<DirectoryPath, ApiError, number>({
+     mutationFn: async (directoryId) => {
+         const res = await fetch(`${API_BASE}/directories/${directoryId}/activate`, {
+             method: 'PUT',
+         });
+         return handleApiResponse<DirectoryPath>(res);
+     },
+     onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['directoryPaths'] });
+         queryClient.invalidateQueries({ queryKey: ['activeDirectory'] });
+     },
+     ...options,
+ });
+}
+
+export function useRemoveDirectory(
+ options?: Omit<UseMutationOptions<void, ApiError, number>, 'mutationFn'>
+) {
+ const queryClient = useQueryClient();
+ return useMutation<void, ApiError, number>({
+     mutationFn: async (directoryId) => {
+         const res = await fetch(`${API_BASE}/directories/${directoryId}`, {
+             method: 'DELETE',
+         });
+         return handleApiResponse<void>(res);
+     },
+     onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['directoryPaths'] });
+         queryClient.invalidateQueries({ queryKey: ['activeDirectory'] });
+     },
+     ...options,
+ });
 }
 
 

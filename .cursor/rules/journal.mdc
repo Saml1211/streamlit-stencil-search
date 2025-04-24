@@ -1,7 +1,7 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # Visio Stencil Search Project Journal
 
@@ -38,7 +38,8 @@ This journal documents important insights, patterns, and project-specific knowle
 - Asynchronous programming for the MCP server to handle concurrent requests
 - Tool-based architecture for MCP server to expose functionality to AI assistants
 - When launching background Python scripts via `run_terminal_cmd` in PowerShell, prefer passing critical configurations (like network URLs) via command-line arguments rather than attempting to set environment variables within the same command string, as propagation can be unreliable.
-- Ensure the correct Python executable from the relevant virtual environment (`venv\Scripts\python.exe`) is used when running scripts via `run_terminal_cmd`, particularly after dependency installations or when troubleshooting module errors.
+- Ensure the correct Python executable from the relevant virtual environment (`venv\\Scripts\\python.exe`) is used when running scripts via `run_terminal_cmd`, particularly after dependency installations or when troubleshooting module errors.
+- Use the **MCP Inspector** tool (`npx @modelcontextprotocol/inspector`) for interactive testing and debugging of the `visio-bridge` MCP server, especially when encountering issues with direct tool calls from the assistant environment.
 
 ### Streamlit Patterns
 - Each page has its own file in the `pages/` directory with a numerical prefix for ordering
@@ -142,6 +143,7 @@ This journal documents important insights, patterns, and project-specific knowle
 - Tool documentation with clear parameter descriptions
 - Security considerations for local-only operation
 - Testing utilities for server verification
+- Utilize the **MCP Inspector** tool (`npx @modelcontextprotocol/inspector`) for reliable testing and debugging (UI & CLI modes).
 
 ## Known Challenges
 - Memory usage can be high when scanning large stencil collections

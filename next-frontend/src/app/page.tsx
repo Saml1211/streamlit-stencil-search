@@ -5,10 +5,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
-import { Loader2, Heart, Eye } from "lucide-react";
-// Correctly import hooks, types, and ApiError
-import { useSearchShapes, useShapeDetail, useAddFavorite, ShapeSummary, ApiError, AddFavoritePayload, FavoriteItem } from "@/api";
+import { Loader2, Heart, Eye, Plus, FolderPlus, Check } from "lucide-react";
+// Updated imports with collection-related hooks and types
+import {
+  useSearchShapes,
+  useShapeDetail,
+  useAddFavorite,
+  useCollections,
+  useUpdateCollection,
+  ShapeSummary,
+  ApiError,
+  AddFavoritePayload,
+  FavoriteItem,
+  Collection
+} from "@/api";
 import { toast } from "sonner"; // Use sonner
 
 // Debounce hook
@@ -19,6 +31,83 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => { clearTimeout(handler); };
   }, [value, delay]);
   return debouncedValue;
+}
+
+// Component to add a shape to a collection
+function AddToCollectionMenu({ shape }: { shape: ShapeSummary }) {
+  const { data: collections, isLoading, isError } = useCollections();
+  const [open, setOpen] = useState(false);
+  
+  const updateCollectionMutation = useUpdateCollection({
+    onSuccess: (updatedCollection) => {
+      toast.success("Added to Collection", {
+        description: `Shape added to collection '${updatedCollection.name}'.`
+      });
+      setOpen(false);
+    },
+    onError: (error) => {
+      const apiError = error as ApiError;
+      toast.error("Failed to Add to Collection", {
+        description: apiError?.detail || apiError?.message || "Could not add shape to collection."
+      });
+    }
+  });
+  
+  const handleAddToCollection = (collectionId: number) => {
+    updateCollectionMutation.mutate({
+      id: collectionId,
+      payload: {
+        add_shape_ids: [shape.shape_id]
+      }
+    });
+  };
+  
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Add to Collection"
+        >
+          <FolderPlus className="h-4 w-4 text-muted-foreground hover:text-primary" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-2" align="end">
+        <div className="text-sm font-medium mb-2">Add to Collection</div>
+        {isLoading ? (
+          <div className="flex items-center justify-center p-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        ) : isError ? (
+          <div className="text-xs text-destructive p-2">Error loading collections</div>
+        ) : !collections || collections.length === 0 ? (
+          <div className="text-xs text-muted-foreground p-2">No collections available</div>
+        ) : (
+          <div className="space-y-1">
+            {collections.map((collection) => (
+              <Button
+                key={collection.id}
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-left font-normal"
+                onClick={() => handleAddToCollection(collection.id)}
+                disabled={updateCollectionMutation.isPending}
+              >
+                {updateCollectionMutation.isPending &&
+                 updateCollectionMutation.variables?.id === collection.id ? (
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="mr-2 h-3 w-3" />
+                )}
+                {collection.name}
+              </Button>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // Component to show shape details in the dialog
@@ -41,7 +130,16 @@ function ShapeDetailView({ shapeId }: { shapeId: number }) {
 
   return (
     <div>
-      <p><strong>Stencil:</strong> {shapeDetail.stencil_name} ({shapeDetail.stencil_path})</p>
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h3 className="font-medium">{shapeDetail.shape_name}</h3>
+          <p className="text-sm text-muted-foreground">{shapeDetail.stencil_name}</p>
+        </div>
+        <div className="flex gap-2">
+          <AddToCollectionMenu shape={shapeDetail} />
+        </div>
+      </div>
+      <p><strong>Stencil Path:</strong> {shapeDetail.stencil_path}</p>
       <p><strong>Shape ID:</strong> {shapeDetail.shape_id}</p>
       <p><strong>Dimensions:</strong> {shapeDetail.width?.toFixed(2) ?? 'N/A'} x {shapeDetail.height?.toFixed(2) ?? 'N/A'}</p>
       {shapeDetail.geometry && <pre className="mt-2 text-xs bg-muted p-2 rounded overflow-auto max-h-40">Geometry: {JSON.stringify(shapeDetail.geometry, null, 2)}</pre>}
@@ -168,15 +266,18 @@ export default function HomePage() {
                     <DialogTrigger asChild onClick={() => setSelectedShapeId(shape.shape_id)}>
                        <Button variant="outline" size="sm" className="flex-grow">Details</Button>
                     </DialogTrigger>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleAddFavorite(shape)}
-                      disabled={addFavoriteMutation.isPending} // Use isPending
-                      title="Add to Favorites"
-                    >
-                      <Heart className={`h-4 w-4 ${addFavoriteMutation.isPending && addFavoriteMutation.variables?.shape_id === shape.shape_id ? 'animate-pulse text-red-500 fill-red-500' : 'text-muted-foreground hover:text-red-500'}`} />
-                    </Button>
+                    <div className="flex gap-1">
+                      <AddToCollectionMenu shape={shape} />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleAddFavorite(shape)}
+                        disabled={addFavoriteMutation.isPending} // Use isPending
+                        title="Add to Favorites"
+                      >
+                        <Heart className={`h-4 w-4 ${addFavoriteMutation.isPending && addFavoriteMutation.variables?.shape_id === shape.shape_id ? 'animate-pulse text-red-500 fill-red-500' : 'text-muted-foreground hover:text-red-500'}`} />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

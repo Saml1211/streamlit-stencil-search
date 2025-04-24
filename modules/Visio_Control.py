@@ -200,6 +200,17 @@ def main(selected_directory=None):
     pages, and perform basic operations without switching applications.
     """)
 
+    # --- Define potentially problematic widgets ONCE --- 
+    # Define the text input for new doc name here, store value in session state
+    st.session_state.visio_control_new_doc_name = st.text_input(
+        "Default New Document Name", # Change label slightly to differentiate if needed
+        value=st.session_state.get("visio_control_new_doc_name", "New Visio Document"),
+        key="visio_control_new_doc_name_widget" # Use a distinct key for the widget itself
+    )
+    # Hide this widget using CSS if we don't want it visible at the top level
+    st.markdown("<style>[data-testid='stTextInput'][key='visio_control_new_doc_name_widget'] {display: none;}</style>", unsafe_allow_html=True)
+    # -----------------------------------------------------
+
     # About section using expander component
     with st.expander("About Visio Control"):
         st.markdown("""
@@ -261,21 +272,23 @@ def main(selected_directory=None):
                 new_doc_col1, new_doc_col2 = st.columns([3, 1])
 
                 with new_doc_col1:
-                    new_doc_name = st.text_input(
-                        "Document Name",
-                        value=st.session_state.get("new_doc_name", "New Visio Document"),
-                        key="new_doc_name"
-                    )
+                    # Display the name stored in session state (set by widget above)
+                    st.write(f"Name for new document: **{st.session_state.visio_control_new_doc_name}**")
+                    # We no longer create the text_input widget here
+                    # new_doc_name_input = st.text_input(...)
 
                 with new_doc_col2:
                     st.write("")  # Spacing
-                    create_doc_btn = st.button("Create", key="create_doc_btn", use_container_width=True)
+                    # Remove explicit key to let Streamlit manage identity
+                    create_doc_btn = st.button("Create", use_container_width=True)
 
                     if create_doc_btn:
-                        with st.spinner(f"Creating document '{new_doc_name}'..."):
-                            success = create_new_document(new_doc_name)
+                        # Use the value from the session state key
+                        doc_name_to_create = st.session_state.visio_control_new_doc_name 
+                        with st.spinner(f"Creating document '{doc_name_to_create}'..."):
+                            success = create_new_document(doc_name_to_create)
                             if success:
-                                st.success(f"Document '{new_doc_name}' created successfully")
+                                st.success(f"Document '{doc_name_to_create}' created successfully")
                                 st.rerun()
                             else:
                                 st.error("Failed to create document")

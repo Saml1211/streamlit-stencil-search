@@ -4,6 +4,7 @@ from typing import Optional, Dict, List
 from .db import StencilDatabase
 from .config import config
 from . import visio
+from pathlib import Path
 
 def directory_preset_manager(container=st.sidebar, key_prefix="") -> str:
     """
@@ -27,7 +28,11 @@ def directory_preset_manager(container=st.sidebar, key_prefix="") -> str:
     preset_dirs = db.get_preset_directories()
 
     # Determine the default directory
-    if active_dir:
+    # Prioritize last used valid directory from session state
+    last_dir_from_session = st.session_state.get('last_dir')
+    if last_dir_from_session and os.path.isdir(last_dir_from_session):
+        default_dir = last_dir_from_session
+    elif active_dir:
         default_dir = active_dir['path']
     else:
         default_dir = config.get("paths.stencil_directory", "./test_data")
@@ -36,6 +41,26 @@ def directory_preset_manager(container=st.sidebar, key_prefix="") -> str:
 
     # Check if we're on mobile based on browser width (if available)
     is_mobile = st.session_state.get('browser_width', 1200) < 768
+
+    # Prepare preset options
+    preset_options_list = db.get_preset_directories() # Fetch fresh list
+    preset_map = {p['name']: p for p in preset_options_list}
+    preset_names = list(preset_map.keys())
+
+    # Determine the initial index for the selectbox based on the active directory
+    active_preset_name = None
+    if active_dir:
+        active_preset_name = active_dir['name']
+    elif last_dir_from_session:
+         # If last_dir exists but no active preset, find its name if it's a preset
+         for p in preset_options_list:
+             if p['path'] == last_dir_from_session:
+                 active_preset_name = p['name']
+                 break
+
+    initial_preset_index = 0
+    if active_preset_name and active_preset_name in preset_names:
+        initial_preset_index = preset_names.index(active_preset_name) + 1 # +1 for "-- Select Preset --"
 
     if is_mobile:
         # Mobile layout
@@ -52,74 +77,134 @@ def directory_preset_manager(container=st.sidebar, key_prefix="") -> str:
 
             if selected_preset != "-- Select Preset --" and preset_dirs:
                 selected_dir = preset_options[selected_preset]
-                if not selected_dir['is_active']:
+                if not active_dir or selected_dir['id'] != active_dir['id']:
                     db.set_active_directory(selected_dir['id'])
-                    # Rerun to reflect changed directory
+                    st.session_state.last_dir = selected_dir['path'] # Update session state
                     st.rerun()
 
             # Directory input
             directory = container.text_input(
                 "Directory:",
-                value=default_dir,
+                value=st.session_state.get('last_dir', default_dir), # Use session state
                 key=f"{key_prefix}dir_input_mobile"
             )
     else:
         # Desktop layout
         # Preset directory selector
         preset_options = {d['name']: d for d in preset_dirs} if preset_dirs else {}
+        preset_names = list(preset_options.keys())
+        current_preset_name = "-- Select Preset --"
+        if active_dir and active_dir['name'] in preset_map:
+            current_preset_name = active_dir['name']
+        elif last_dir_from_session:
+             for name, data in preset_map.items():
+                 if data['path'] == last_dir_from_session:
+                     current_preset_name = name
+                     break
+        
+        current_preset_index = 0
+        if current_preset_name != "-- Select Preset --":
+            current_preset_index = preset_names.index(current_preset_name) + 1
+        
         selected_preset = container.selectbox(
             "Preset Directories",
-            ["-- Select Preset --"] + list(preset_options.keys()),
-            index=0,
+            ["-- Select Preset --"] + preset_names,
+            index=current_preset_index, # Set initial index correctly
             key=f"{key_prefix}preset_selector_desktop"
         )
 
-        if selected_preset != "-- Select Preset --" and preset_dirs:
-            selected_dir = preset_options[selected_preset]
-            if not selected_dir['is_active']:
-                db.set_active_directory(selected_dir['id'])
-                # Rerun to reflect changed directory
+        # Update based on selectbox change
+        if selected_preset != "-- Select Preset --":
+            selected_preset_data = preset_map[selected_preset]
+            # Check if selection actually changed the active dir
+            if not active_dir or selected_preset_data['id'] != active_dir['id']:
+                db.set_active_directory(selected_preset_data['id'])
+                st.session_state.last_dir = selected_preset_data['path'] # Update session state
                 st.rerun()
+            # Ensure directory value matches selection
+            directory_value = selected_preset_data['path']
+        else:
+            # If no preset selected, use session state or default
+            directory_value = st.session_state.get('last_dir', default_dir)
 
         # Directory input
         directory = container.text_input(
             "Stencil Directory",
-            value=default_dir,
+            value=directory_value, # Use derived value
             key=f"{key_prefix}dir_input_desktop"
         )
 
-        # Save as preset button
-        save_preset_btn = container.button("💾 Save as Preset", use_container_width=True, key=f"{key_prefix}save_preset_btn")
+        # Save as preset button and Set Active button
+        col1, col2 = container.columns(2)
+        save_preset_btn = col1.button("💾 Save as Preset", use_container_width=True, key=f"{key_prefix}save_preset_btn")
+        set_active_btn = col2.button("📌 Set Active Directory", use_container_width=True, key=f"{key_prefix}set_active_btn")
+
         if save_preset_btn:
             with container.form(key=f"{key_prefix}save_preset_form", clear_on_submit=True):
                 st.subheader("Save Directory Preset")
-                preset_name = st.text_input("Enter a name for this preset:", key=f"{key_prefix}preset_name_input")
-
+                preset_name_input = st.text_input("Enter a name for this preset:", key=f"{key_prefix}preset_name_input")
                 form_col1, form_col2 = st.columns(2)
                 submitted = form_col1.form_submit_button("Save", use_container_width=True)
                 cancel = form_col2.form_submit_button("Cancel", use_container_width=True)
+                if submitted and preset_name_input:
+                    path_to_save = directory # Use current text input value
+                    if os.path.isdir(path_to_save):
+                        save_success = db.add_preset_directory(path_to_save, preset_name_input)
+                        if save_success:
+                            st.success(f"Preset '{preset_name_input}' saved!")
+                            # Automatically set active?
+                            # preset_id = db.get_preset_by_path(path_to_save) # Need this helper
+                            # if preset_id: db.set_active_directory(preset_id)
+                            st.rerun()
+                        else:
+                            st.error("Failed to save preset. Directory or name might already exist.")
+                    else:
+                        st.error(f"Invalid directory path: {path_to_save}")
 
-                if submitted and preset_name:
-                    success = db.add_preset_directory(directory, preset_name)
-                    if success:
-                        st.success(f"Preset '{preset_name}' saved!")
+        # Handle Set Active button click
+        if set_active_btn:
+            if os.path.isdir(directory):
+                # Find or add preset and get its ID
+                target_id = None
+                existing_presets = db.get_preset_directories()
+                for p in existing_presets:
+                    if p['path'] == directory:
+                        target_id = p['id']
+                        break
+                if not target_id:
+                    # Try adding it if it doesn't exist as a preset yet
+                    preset_name = Path(directory).name
+                    if db.add_preset_directory(directory, preset_name):
+                         # Need to get the ID after adding
+                         added_presets = db.get_preset_directories()
+                         for p in added_presets:
+                             if p['path'] == directory:
+                                 target_id = p['id']
+                                 break
+                    else:
+                        st.error("Failed to add directory as a new preset.")
+                
+                # Set active if we have an ID
+                if target_id:
+                    if db.set_active_directory(target_id):
+                        st.success(f"Directory '{directory}' set as active.")
+                        st.session_state.last_dir = directory
                         st.rerun()
                     else:
-                        st.error("Failed to save preset. Directory might already exist.")
+                        st.error("Failed to set directory as active in DB.")
+                # No else needed, errors handled above
+            else:
+                st.error(f"Directory path is not valid: {directory}")
 
-    # Update active directory in database when changed
-    if 'last_dir' not in st.session_state or st.session_state.last_dir != directory:
-        st.session_state.last_dir = directory
-        # Add and set as active if not already in presets
-        db.add_preset_directory(directory)
-        # Get the directory ID and set it as active
-        preset_dirs = db.get_preset_directories()
-        for preset in preset_dirs:
-            if preset['path'] == directory:
-                db.set_active_directory(preset['id'])
-                break
+    if directory != st.session_state.get('last_dir'):
+        if os.path.isdir(directory):
+            st.session_state.last_dir = directory
+            # Don't automatically set active here; require button or preset select
+        else:
+            pass # Ignore invalid manual input for now
 
     db.close()
+    # Return the directory currently shown in the text input
     return directory
 
 def render_shared_sidebar(key_prefix="") -> str:

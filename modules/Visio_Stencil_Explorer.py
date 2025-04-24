@@ -277,6 +277,20 @@ def initialize_session_state():
         st.session_state.current_search_term = ""
     if 'last_search_input' not in st.session_state:
         st.session_state.last_search_input = ""
+    # Ensure batch selection state is initialized if not done in app.py (belt-and-suspenders)
+    if 'selected_shapes_for_batch' not in st.session_state:
+        st.session_state.selected_shapes_for_batch = {}
+
+# Callback to handle changes in batch selection checkboxes
+def handle_batch_selection_change(shape_unique_id, shape_data):
+    widget_key = f"select_batch_{shape_unique_id}"
+    if st.session_state.get(widget_key):
+        # Checkbox is checked, add/update shape data in selection dict
+        st.session_state.selected_shapes_for_batch[shape_unique_id] = shape_data
+    else:
+        # Checkbox is unchecked, remove shape data from selection dict if it exists
+        if shape_unique_id in st.session_state.selected_shapes_for_batch:
+            del st.session_state.selected_shapes_for_batch[shape_unique_id]
 
 # Callback to update the main search term state
 def update_search_term():
@@ -314,6 +328,14 @@ def perform_search():
             'property_value': st.session_state.filter_property_value
         }
 
+        # --- DEBUG PRINT --- 
+        print(f"--- Performing Search ---")
+        print(f"Term: '{search_term}'")
+        print(f"Filters: {filters}")
+        print(f"Active Directory: {active_directory}")
+        print(f"Search in Document: {st.session_state.get('search_in_document_checkbox', False)}")
+        # --- END DEBUG PRINT ---
+
         # Initialize results list
         results = []
 
@@ -322,12 +344,25 @@ def perform_search():
         results.extend(db_results)
 
         # Search in current document if option is enabled
-        if st.session_state.get('search_in_document', False):
+        if st.session_state.get('search_in_document_checkbox', False):
             doc_results = search_current_document(search_term)
-            results.extend(doc_results)
+            # --- Add duplicate check --- 
+            existing_doc_shape_ids = {r['shape_id'] for r in results if r.get('is_document_shape')}
+            for doc_shape in doc_results:
+                if doc_shape['shape_id'] not in existing_doc_shape_ids:
+                    results.append(doc_shape)
+            # --- End duplicate check --- 
+
+        # --- Apply limit to the combined results --- 
+        limit = st.session_state.get('search_result_limit', 1000)
+        final_results = results[:limit]
+        # --- End limit application ---
 
         # Update search results
-        st.session_state.search_results = results
+        st.session_state.search_results = final_results
+
+    else: # Handle case where search term is empty
+        st.session_state.search_results = []
 
 def main(selected_directory=None):
     # No need to initialize session state here as it's done in app.py
@@ -358,15 +393,47 @@ def main(selected_directory=None):
         """)
 
     # Determine the active directory
-    if selected_directory and 'path' in selected_directory:
-        active_directory = selected_directory['path']
-        st.session_state.active_explorer_directory = active_directory
-        st.info(f"Searching in Preset Directory: {selected_directory.get('name', active_directory)}")
-    else:
-        # Fallback if no valid selected_directory is passed
-        active_directory = st.session_state.get('active_explorer_directory', config.get("paths.stencil_directory", "./test_data"))
-        st.session_state.active_explorer_directory = active_directory
-        st.warning(f"No preset directory selected. Using default/last used: {active_directory}")
+    directory_to_use = None
+    directory_source = "unknown"
+
+    if selected_directory: # Check if a directory path was passed from app.py
+        if isinstance(selected_directory, str) and os.path.isdir(selected_directory):
+            directory_to_use = selected_directory
+            directory_source = "passed_from_app"
+            # Check if it corresponds to an active preset for informational message
+            db = StencilDatabase()
+            active_preset = db.get_active_directory()
+            db.close()
+            if active_preset and active_preset['path'] == directory_to_use:
+                st.info(f"Using Active Preset Directory: {active_preset['name']} ({directory_to_use})")
+        else:
+             # Invalid directory passed from app.py, try session state
+             pass # Fall through to session state check
+    
+    if not directory_to_use:
+        # Fallback to session state or config if nothing valid was passed
+        last_dir_from_session = st.session_state.get('last_dir')
+        if last_dir_from_session and os.path.isdir(last_dir_from_session):
+            directory_to_use = last_dir_from_session
+            directory_source = "session_state"
+            st.info(f"Using Last Session Directory: {directory_to_use}")
+        else:
+            # Final fallback to config default
+            config_default = config.get("paths.stencil_directory", "./test_data")
+            if os.path.isdir(config_default):
+                 directory_to_use = config_default
+                 directory_source = "config_default"
+                 st.warning(f"No valid directory selected. Using config default: {directory_to_use}")
+            else:
+                 directory_to_use = None # No valid directory found anywhere
+                 directory_source = "none"
+                 st.error("No valid stencil directory found or configured. Please select one in the sidebar.")
+
+    # Store the determined directory for use in this page
+    active_directory = directory_to_use
+    # Update session state if the source wasn't session state itself
+    if directory_source != "session_state" and active_directory:
+        st.session_state.last_dir = active_directory 
 
     # Determine column ratio based on screen width
     browser_width = st.session_state.get('browser_width', 1200)  # Default to desktop
@@ -824,10 +891,33 @@ def main(selected_directory=None):
                         # Adjust column widths based on screen size
                         browser_width = st.session_state.get('browser_width', 1200)
                         if browser_width < 768:  # Mobile
-                            res_col1, res_col2 = st.columns([4, 1])
+                            # Checkbox, Shape/Stencil, Action1
+                            res_col_cb, res_col1, res_col2 = st.columns([1, 4, 1])
                             res_col3 = res_col2  # Use same column for both actions
                         else:  # Tablet and Desktop
-                            res_col1, res_col2, res_col3 = st.columns([5, 1, 1])
+                            # Checkbox, Shape/Stencil, Action1, Action2
+                            res_col_cb, res_col1, res_col2, res_col3 = st.columns([1, 5, 1, 1])
+
+                        # --- Checkbox Column ---
+                        with res_col_cb:
+                            # Need a unique ID for each shape row for the selection state
+                            # Combine path and name for stencils, use shape_id for doc shapes
+                            if is_document_shape:
+                                shape_unique_id = f"doc_{shape_id}"
+                            else:
+                                shape_unique_id = f"stencil_{row['Path']}_{row['Shape']}"
+
+                            # Get the full data for this shape to store on selection
+                            full_shape_data = original_result
+
+                            # Render the checkbox
+                            st.checkbox("", # No visible label
+                                        key=f"select_batch_{shape_unique_id}",
+                                        value=(shape_unique_id in st.session_state.selected_shapes_for_batch),
+                                        on_change=handle_batch_selection_change,
+                                        args=(shape_unique_id, full_shape_data),
+                                        label_visibility="collapsed"
+                                        )
 
                         with res_col1:
                             # Use the original_result we already have
@@ -1032,7 +1122,7 @@ def main(selected_directory=None):
                     with create_doc_col1:
                         new_doc_name = st.text_input("New document name", value="New Document", key="new_doc_name")
                     with create_doc_col2:
-                        if st.button("Create New Document", key="create_doc_btn"):
+                        if st.button("Create New Document"):
                             with st.spinner("Creating new Visio document..."):
                                 success = visio.create_new_document(new_doc_name)
                                 if success:

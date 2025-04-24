@@ -157,13 +157,25 @@ class StencilDatabase:
     def _run_migrations(self, conn):
         """Run database migrations to ensure schema is up to date"""
         try:
-            cursor = conn.execute("PRAGMA table_info(shapes)")
-            columns = {row['name'] for row in cursor.fetchall()} # Use set for faster lookup
-            if 'width' not in columns: conn.execute("ALTER TABLE shapes ADD COLUMN width REAL DEFAULT 0")
-            if 'height' not in columns: conn.execute("ALTER TABLE shapes ADD COLUMN height REAL DEFAULT 0")
-            if 'geometry' not in columns: conn.execute("ALTER TABLE shapes ADD COLUMN geometry TEXT")
-            if 'properties' not in columns: conn.execute("ALTER TABLE shapes ADD COLUMN properties TEXT")
+            # Check and migrate 'shapes' table
+            shapes_cursor = conn.execute("PRAGMA table_info(shapes)")
+            shapes_columns = {row['name'] for row in shapes_cursor.fetchall()} # Use set for faster lookup
+            if 'width' not in shapes_columns: conn.execute("ALTER TABLE shapes ADD COLUMN width REAL DEFAULT 0")
+            if 'height' not in shapes_columns: conn.execute("ALTER TABLE shapes ADD COLUMN height REAL DEFAULT 0")
+            if 'geometry' not in shapes_columns: conn.execute("ALTER TABLE shapes ADD COLUMN geometry TEXT")
+            if 'properties' not in shapes_columns: conn.execute("ALTER TABLE shapes ADD COLUMN properties TEXT")
+
+            # Check and migrate 'stencils' table
+            stencils_cursor = conn.execute("PRAGMA table_info(stencils)")
+            stencils_columns = {row['name'] for row in stencils_cursor.fetchall()}
+            if 'file_size' not in stencils_columns:
+                print("Adding 'file_size' column to 'stencils' table...")
+                conn.execute("ALTER TABLE stencils ADD COLUMN file_size INTEGER")
+                # Optionally, backfill file_size if possible/needed, though caching will handle it
+                print("'file_size' column added.")
+
             conn.commit()
+            print("Database migrations checked/completed.")
         except Exception as e:
             print(f"Error running migrations: {str(e)}")
             conn.rollback() # Rollback changes if a migration fails
@@ -459,16 +471,24 @@ class StencilDatabase:
              row = cursor.fetchone(); return dict(row) if row else None
 
     def set_active_directory(self, directory_id: int) -> bool:
+        """Set the active directory"""
         with self._lock:
             conn = self._get_conn()
             try:
-                if not conn.execute("SELECT 1 FROM preset_directories WHERE id = ?", (directory_id,)).fetchone():
-                    print(f"Error: Preset directory ID {directory_id} not found."); return False
-                conn.execute("BEGIN TRANSACTION")
+                # Remove explicit transaction management
+                # conn.execute("BEGIN TRANSACTION") 
+                # Set all directories to inactive first
                 conn.execute("UPDATE preset_directories SET is_active = 0")
-                conn.execute("UPDATE preset_directories SET is_active = 1 WHERE id = ?", (directory_id,))
-                conn.commit(); print(f"Set active directory to ID: {directory_id}"); return True
-            except Exception as e: print(f"Error setting active directory: {e}"); conn.rollback(); return False
+                # Set the specified directory to active
+                result = conn.execute("UPDATE preset_directories SET is_active = 1 WHERE id = ?", (directory_id,))
+                # Commit removed - rely on implicit transaction/autocommit
+                # conn.execute("COMMIT") 
+                return result.rowcount > 0
+            except sqlite3.Error as e:
+                print(f"Error setting active directory: {e}")
+                # Rollback removed as no explicit transaction started
+                # conn.rollback() 
+                return False
 
     def remove_preset_directory(self, directory_id: int) -> bool:
         with self._lock:
@@ -666,6 +686,21 @@ class StencilDatabase:
         with self._lock:
             conn = self._get_conn()
             cursor = conn.cursor()
+
+            # --- Add this block: Pre-check for file_size column ---
+            try:
+                stencils_cursor = conn.execute("PRAGMA table_info(stencils)")
+                stencils_columns = {row['name'] for row in stencils_cursor.fetchall()}
+                if 'file_size' not in stencils_columns:
+                    print("!!! 'file_size' column missing in search_shapes connection. Running migration...")
+                    # Run the migration logic specifically for this connection
+                    conn.execute("ALTER TABLE stencils ADD COLUMN file_size INTEGER")
+                    conn.commit()
+                    print("Migration applied within search_shapes.")
+            except Exception as migration_check_e:
+                print(f"Error checking/applying migration within search_shapes: {migration_check_e}")
+            # --- End of added block ---
+
             query_params = {}
             filter_clauses = []
 
@@ -695,16 +730,18 @@ class StencilDatabase:
                     filter_clauses.append("stencils.last_modified < :date_end")
 
                 # --- Size and Shape Count Filters (on stencils table) ---
+                # Only add clauses if the filter value is actually restrictive
                 if filters.get('min_size') is not None and filters['min_size'] > 0:
                     query_params['min_size'] = filters['min_size']
                     filter_clauses.append("stencils.file_size >= :min_size")
-                if filters.get('max_size') is not None and filters['max_size'] > 0:
+                # Check against a sensible max default (e.g. 50MB * 1024 * 1024) or ensure it's less than a very large number
+                if filters.get('max_size') is not None and filters['max_size'] < (50 * 1024 * 1024): # Only add if less than default max
                     query_params['max_size'] = filters['max_size']
                     filter_clauses.append("stencils.file_size <= :max_size")
                 if filters.get('min_shapes') is not None and filters['min_shapes'] > 0:
                     query_params['min_shapes'] = filters['min_shapes']
                     filter_clauses.append("stencils.shape_count >= :min_shapes")
-                if filters.get('max_shapes') is not None and filters['max_shapes'] > 0:
+                if filters.get('max_shapes') is not None and filters['max_shapes'] < 500: # Only add if less than default max
                     query_params['max_shapes'] = filters['max_shapes']
                     filter_clauses.append("stencils.shape_count <= :max_shapes")
 
@@ -790,7 +827,13 @@ class StencilDatabase:
             query_params['limit'] = limit
             query_params['offset'] = offset
 
-            # print(f"Executing search query:\n{query}\nParams: {query_params}") # Debugging line
+            # --- DEBUG PRINT --- 
+            print(f"--- Executing DB Search Query ---")
+            print(f"Using FTS: {use_fts}")
+            print("SQL Query:")
+            print(query)
+            print(f"Parameters: {query_params}")
+            # --- END DEBUG PRINT --- 
             try:
                 cursor.execute(query, query_params)
                 results = [
@@ -801,20 +844,25 @@ class StencilDatabase:
                     }
                     for row in cursor.fetchall()
                 ]
-                # print(f"--- search_shapes: {len(results)} results, total {limit} --- ") # Debugging line
                 return results
             except sqlite3.OperationalError as e:
                 print(f"!!! Database search error: {e}")
-                if "fts5" in str(e).lower():
-                    print("FTS index might be corrupted or missing. Attempting to rebuild.")
-                    if self.rebuild_fts_index():
-                        print("FTS index rebuilt. Retrying search...")
-                        return self.search_shapes(search_term, filters, use_fts, limit, offset, directory_filter)
-                    else:
-                        print("FTS index rebuild failed. Falling back to standard search.")
+                if use_fts: # <-- Fallback if *any* OperationalError occurs during an FTS attempt
+                    print("OperationalError during FTS search. Attempting fallback to standard search.")
+                    # Remove the debug prints temporarily to avoid recursive printing on fallback
+                    # return self.search_shapes(search_term, filters, False, limit, offset, directory_filter)
+                    # Need to implement fallback carefully to avoid infinite loops if standard search also fails
+                    try:
+                        print("Retrying with standard search...")
+                        # Ensure use_fts is False for the recursive call
                         return self.search_shapes(search_term, filters, False, limit, offset, directory_filter)
+                    except Exception as fallback_e:
+                        print(f"!!! Standard search fallback also failed: {fallback_e}")
+                        traceback.print_exc()
+                        return [] # Return empty on fallback failure
                 else:
-                    traceback.print_exc() # Print detailed traceback for other operational errors
+                    # Error occurred even during standard search, or FTS wasn't used
+                    traceback.print_exc() # Print detailed traceback for non-FTS operational errors
                     return [] # Return empty list on error
             except Exception as e: # Catch other potential errors
                 print(f"!!! Unexpected search error: {e}")

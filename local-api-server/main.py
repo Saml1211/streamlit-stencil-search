@@ -175,6 +175,17 @@ class IntegrationStatus(BaseModel):
     error_message: Optional[str] = None
 
 
+# --- Models for Directory Paths ---
+class DirectoryPath(BaseModel):
+    id: int
+    path: str
+    name: str
+    is_active: bool
+
+class DirectoryPathPayload(BaseModel):
+    path: str = Field(..., min_length=1)
+    name: Optional[str] = None
+
 
 # --- Models for Commands ---
 class CommandPayload(BaseModel):
@@ -434,6 +445,96 @@ async def delete_collection_api(collection_id: int):
        traceback.print_exc()
        raise HTTPException(status_code=500, detail=f"Internal server error deleting collection: {e}")
 
+
+# --- Directory Path Endpoints ---
+
+@app.get("/directories", response_model=List[DirectoryPath], summary="Get Directory Paths")
+async def get_directories_api():
+   """ Retrieves all configured directory paths for stencil scanning. """
+   try:
+       directories = db.get_preset_directories()
+       return directories
+   except Exception as e:
+       print(f"Error fetching directory paths: {e}", file=sys.stderr)
+       traceback.print_exc()
+       raise HTTPException(status_code=500, detail=f"Internal server error fetching directory paths: {e}")
+
+
+@app.get("/directories/active", response_model=Optional[DirectoryPath], summary="Get Active Directory")
+async def get_active_directory_api():
+   """ Retrieves the currently active directory for stencil scanning. """
+   try:
+       active_dir = db.get_active_directory()
+       return active_dir
+   except Exception as e:
+       print(f"Error fetching active directory: {e}", file=sys.stderr)
+       traceback.print_exc()
+       raise HTTPException(status_code=500, detail=f"Internal server error fetching active directory: {e}")
+
+
+@app.post("/directories", response_model=DirectoryPath, status_code=201, summary="Add Directory Path")
+async def add_directory_api(payload: DirectoryPathPayload):
+   """ Adds a new directory path for stencil scanning. """
+   try:
+       success = db.add_preset_directory(path=payload.path, name=payload.name)
+       if not success:
+           raise HTTPException(status_code=409, detail=f"Directory path '{payload.path}' already exists.")
+       
+       # Get the newly created directory to return it
+       # Need to find it by path since we don't have the ID
+       directories = db.get_preset_directories()
+       new_dir = next((d for d in directories if d['path'] == payload.path), None)
+       
+       if not new_dir:
+           raise HTTPException(status_code=500, detail="Directory was added but could not be retrieved.")
+           
+       return new_dir
+   except HTTPException as http_exc:
+       raise http_exc
+   except Exception as e:
+       print(f"Error adding directory path: {e}", file=sys.stderr)
+       traceback.print_exc()
+       raise HTTPException(status_code=500, detail=f"Internal server error adding directory path: {e}")
+
+
+@app.put("/directories/{directory_id}/activate", response_model=DirectoryPath, summary="Set Active Directory")
+async def set_active_directory_api(directory_id: int):
+   """ Sets a directory as the active directory for stencil scanning. """
+   try:
+       success = db.set_active_directory(directory_id)
+       if not success:
+           raise HTTPException(status_code=404, detail=f"Directory with ID {directory_id} not found.")
+       
+       # Get the updated directory to return it
+       active_dir = db.get_active_directory()
+       if not active_dir:
+           raise HTTPException(status_code=500, detail="Active directory was set but could not be retrieved.")
+           
+       return active_dir
+   except HTTPException as http_exc:
+       raise http_exc
+   except Exception as e:
+       print(f"Error setting active directory: {e}", file=sys.stderr)
+       traceback.print_exc()
+       raise HTTPException(status_code=500, detail=f"Internal server error setting active directory: {e}")
+
+
+@app.delete("/directories/{directory_id}", status_code=204, summary="Remove Directory Path")
+async def remove_directory_api(directory_id: int):
+   """ Removes a directory path from the configured directories. """
+   try:
+       success = db.remove_preset_directory(directory_id)
+       if not success:
+           raise HTTPException(status_code=404, detail=f"Directory with ID {directory_id} not found.")
+       
+       # Return No Content on success
+       return
+   except HTTPException as http_exc:
+       raise http_exc
+   except Exception as e:
+       print(f"Error removing directory path: {e}", file=sys.stderr)
+       traceback.print_exc()
+       raise HTTPException(status_code=500, detail=f"Internal server error removing directory path: {e}")
 
 
 # --- Health and Status Endpoints ---

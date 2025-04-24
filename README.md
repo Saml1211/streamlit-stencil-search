@@ -209,6 +209,115 @@ streamlit-stencil-search/
 └── README.md             # This file
 ```
 
+## 📜 Startup Scripts & Utility Tools
+
+The project includes several helper scripts to streamline development and testing:
+
+### Startup Scripts
+
+#### `start_all.ps1` (PowerShell) 
+The main startup script that launches all core components as background jobs:
+
+```powershell
+# Run from PowerShell in project root
+.\start_all.ps1
+```
+
+This script:
+- Starts the Local API Server (with automatic virtual environment activation)
+- Starts the MCP Server
+- Starts the Next.js Frontend in development mode
+- Configures logging to separate log files for each component
+- Runs everything as background jobs in a single PowerShell instance
+
+**Tip:** Use `Get-Job` to check running job status and `Stop-Job -Name JOB_NAME` to stop specific jobs.
+
+#### `start_inspector.bat` (Windows Batch)
+Launches the MCP Inspector for debugging and testing the MCP server:
+
+```batch
+start_inspector.bat
+```
+
+This script:
+- Starts the MCP Inspector tool (requires Node.js/npm)
+- Connects to the MCP server to enable interactive testing
+- Opens a web interface at http://localhost:6274
+- Note: Requires the Local API Server to be running first
+
+#### `start_streamlit.ps1` (PowerShell)
+Attempts to start the legacy Streamlit UI:
+
+```powershell
+# Run from PowerShell in project root
+.\start_streamlit.ps1
+```
+
+**Note:** This script launches the older Streamlit version of the UI (now replaced by Next.js). It may not function correctly with the current API server and should be used only for reference or legacy purposes.
+
+### Root Python Scripts
+
+#### `app.py`
+The main entry point for the legacy Streamlit application:
+- Configures the Streamlit UI with navigation and pages
+- Initializes the database and checks integrity
+- Sets up session state, error handling, and logging
+- Injects custom CSS and JavaScript for improved UI
+- Creates the tabbed interface for different app modules
+
+**Usage:**
+```bash
+streamlit run app.py
+```
+
+#### `build.py`
+Build script for creating distributable packages:
+- Creates standalone executables using PyInstaller
+- Builds Docker images for containerized deployment
+- Supports multiple build targets (--exe, --docker, or --all)
+
+**Usage:**
+```bash
+# Show help and options
+python build.py
+
+# Build executable only
+python build.py --exe
+
+# Build Docker image only
+python build.py --docker
+
+# Build both executable and Docker image
+python build.py --all
+```
+
+#### `test_db.py`
+Comprehensive test script for the stencil database functionality:
+- Tests database connection and creation
+- Verifies preset directories CRUD operations
+- Tests stencil caching and retrieval
+- Validates saved searches functionality
+- Tests favorites system
+- Benchmarks search performance (FTS vs. LIKE)
+
+**Usage:**
+```bash
+python test_db.py
+```
+
+#### `test_favorites.py`
+Targeted test script specifically for the favorites functionality:
+- Tests adding stencils to favorites
+- Verifies favorite status checking
+- Tests retrieving all favorites
+- Validates removing favorites
+- Checks database integrity and foreign key constraints
+
+**Usage:**
+```bash
+python test_favorites.py
+```
+
 ## 📚 Documentation
 
 - [Chrome Extension & API Bridge Architecture](docs/Chrome-Visio-Extension-Plan-Detailed.md)

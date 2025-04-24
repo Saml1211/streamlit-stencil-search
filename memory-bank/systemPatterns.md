@@ -1,12 +1,12 @@
 # System Patterns
 
 ## System Architecture
-The Visio Stencil Search application follows a modular architecture built on the Streamlit framework. The system is organized into distinct components that handle specific responsibilities, following a clean separation of concerns.
+The Visio Stencil Search application follows a modular architecture with dual frontend implementations: the primary Streamlit-based dashboard and a new Next.js-based dashboard. Both frontends interact with the same backend services, following a clean separation of concerns. This dual-UI approach provides flexibility while maintaining consistent functionality.
 
 ## Architecture Overview
 ```
 streamlit-stencil-search/
-├── app/                  # Core application logic
+├── app/                  # Core application logic (Streamlit)
 │   ├── core/             # Business logic components
 │   └── data/             # Application data resources
 ├── pages/                # Streamlit pages/views
@@ -15,9 +15,18 @@ streamlit-stencil-search/
 ├── memory-bank/          # Project documentation and progress tracking
 ├── logs/                 # Application logs
 ├── temp/                 # Temporary file storage
-├── app.py                # Main application entry point
+├── app.py                # Main Streamlit application entry point
 ├── config.yaml           # Configuration settings
-└── requirements.txt      # Python dependencies
+├── requirements.txt      # Python dependencies
+├── next-frontend/        # Next.js frontend implementation
+│   ├── src/              # Next.js source code
+│   │   ├── app/          # Next.js app router pages
+│   │   ├── components/   # React components
+│   │   ├── lib/          # Utility functions
+│   │   └── api/          # API client code
+│   ├── public/           # Static assets
+│   └── package.json      # Node.js dependencies
+└── mcp-server/           # Model Context Protocol server
 ```
 
 ## Key Components
@@ -112,12 +121,19 @@ streamlit-stencil-search/
 
 ## Technical Decisions
 
-### Framework Choice
+### Framework Choices
 - **Streamlit**: Selected for rapid development of data applications with minimal frontend code
-- Provides built-in components for common UI patterns (sidebar, data tables, file uploaders)
-- Enables easy deployment as a local application or web service
-- Enhanced with custom CSS for improved visual design
-- Extended with JavaScript for responsive behaviors
+  - Provides built-in components for common UI patterns (sidebar, data tables, file uploaders)
+  - Enables easy deployment as a local application or web service
+  - Enhanced with custom CSS for improved visual design
+  - Extended with JavaScript for responsive behaviors
+
+- **Next.js**: Selected for a more modern, scalable frontend implementation
+  - React-based framework for highly interactive UI
+  - Uses shadcn/ui component library for consistent, polished look and feel
+  - App Router architecture for improved routing and layout management
+  - API routes for backend communication
+  - Enhanced SEO capabilities (if needed in the future)
 
 ### Database Approach
 - Using SQLite database for efficiency and simplicity of deployment
@@ -147,7 +163,9 @@ streamlit-stencil-search/
 - Error handling with graceful degradation
 - Clean abstraction layer for Visio operations
 
-### UI Implementation Approach
+### UI Implementation Approaches
+
+#### Streamlit UI
 - Using Streamlit's built-in components wherever possible
 - Custom HTML/CSS for enhanced styling and layout
 - Session state for managing UI state between refreshes
@@ -160,6 +178,17 @@ streamlit-stencil-search/
 - Responsive layouts that adapt to browser width
 - Card-based design for visual organization
 - Consistent spacing and typography
+
+#### Next.js UI
+- Component-based architecture with React
+- shadcn/ui as the UI component library
+- Client-side state management with React hooks
+- Server components for improved performance
+- Responsive design using CSS modules or tailwindcss
+- Consistent design language across all pages
+- Progressive enhancement for better user experience
+- Modern UI patterns (modals, popovers, etc.)
+- Feature parity with Streamlit implementation
 
 ### File Handling
 - Cross-platform path normalization for compatibility

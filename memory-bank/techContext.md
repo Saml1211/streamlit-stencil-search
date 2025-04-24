@@ -127,4 +127,67 @@
 - **Health Analysis**: Background processing for stencil health checks
 - **Database Operations**: Concurrent-safe database access with locks
 - **Progress Tracking**: Real-time progress indicators for long operations
-- **Error Recovery**: Automatic handling of transient failures 
+- **Error Recovery**: Automatic handling of transient failures
+
+## MCP Inspector
+
+### Overview
+The MCP Inspector is a developer tool for testing and debugging MCP servers, including the `visio-bridge` server used in this project. It provides both a UI and a CLI mode for interaction.
+
+Reference: [https://github.com/modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector)
+
+### Prerequisites
+- **Node.js and npm**: Required to run the MCP Inspector using `npx`. Ensure they are installed and accessible in your environment.
+
+### Running the Inspector
+
+**1. From the Project Root (UI Mode):**
+
+Use `npx` to run the Inspector, pointing it to the `visio-bridge` server script. Pass necessary arguments like the API URL using the `--` separator.
+
+```bash
+# Ensure the visio-bridge MCP server and local API server are running first
+# Adjust python path and API URL if necessary
+npx @modelcontextprotocol/inspector -- venv\\Scripts\\python.exe visio_bridge/mcp_server.py --api-url http://127.0.0.1:8001
+```
+
+- **UI Access:** The inspector runs an MCP Inspector (MCPI) client UI (default port `6274`) and an MCP Proxy (MCPP) server (default port `6277`). Open `http://localhost:6274` in your browser.
+- **Custom Ports:** You can customize ports if needed:
+  ```bash
+  CLIENT_PORT=8080 SERVER_PORT=9000 npx @modelcontextprotocol/inspector -- venv\\Scripts\\python.exe visio_bridge/mcp_server.py --api-url http://127.0.0.1:8001
+  ```
+
+**2. CLI Mode:**
+
+CLI mode enables programmatic interaction, useful for scripting and quick checks.
+
+```bash
+# Basic CLI launch pointing to our server
+npx @modelcontextprotocol/inspector --cli -- venv\\Scripts\\python.exe visio_bridge/mcp_server.py --api-url http://127.0.0.1:8001
+
+# List available tools
+npx @modelcontextprotocol/inspector --cli -- venv\\Scripts\\python.exe visio_bridge/mcp_server.py --api-url http://127.0.0.1:8001 --method tools/list
+
+# Call a specific tool (e.g., check_api_connection)
+npx @modelcontextprotocol/inspector --cli -- venv\\Scripts\\python.exe visio_bridge/mcp_server.py --api-url http://127.0.0.1:8001 --method tools/call --tool-name mcp_visio_bridge_check_api_connection
+
+# Call a specific tool (e.g., check_visio_connection)
+npx @modelcontextprotocol/inspector --cli -- venv\\Scripts\\python.exe visio_bridge/mcp_server.py --api-url http://127.0.0.1:8001 --method tools/call --tool-name mcp_visio_bridge_check_visio_connection
+```
+
+### Configuration
+The MCP Inspector UI allows adjusting settings like request timeouts (`MCP_SERVER_REQUEST_TIMEOUT`, `MCP_REQUEST_MAX_TOTAL_TIMEOUT`). These settings persist across sessions. It also supports configuration files (`--config path/to/config.json`) for managing multiple server setups, though this is less likely needed for our single `visio-bridge` server.
+
+### UI Mode vs CLI Mode
+
+| Use Case                 | UI Mode                                                                   | CLI Mode                                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Server Development**   | Visual interface for interactive testing and debugging during development | Scriptable commands for quick testing and continuous integration; creates feedback loops with AI coding assistants like Cursor for rapid development |
+| **Resource Exploration** | Interactive browser with hierarchical navigation and JSON visualization   | Programmatic listing and reading for automation and scripting                                                                                        |
+| **Tool Testing**         | Form-based parameter input with real-time response visualization          | Command-line tool execution with JSON output for scripting                                                                                           |
+| **Debugging**            | Request history, visualized errors, and real-time notifications           | Direct JSON output for log analysis and integration with other tools                                                                                 |
+| **Automation**           | N/A                                                                       | Potentially useful for automated test scripts                                                                                                         |
+| **Learning MCP**         | Rich visual interface helps understand server capabilities                  | Simplified commands for focused learning of specific endpoints                                                                                       |
+
+### Security Considerations
+The MCP Inspector includes a proxy server that can spawn local processes (our Python server). Ensure it is not exposed to untrusted networks. For our typical local development workflow, this is generally not a concern. 

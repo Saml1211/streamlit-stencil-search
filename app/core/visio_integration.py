@@ -900,27 +900,54 @@ class VisioIntegration:
 
             # Get shapes in the page
             for i in range(1, page.Shapes.Count + 1):
+                shape_data = {"index": i, "shape": None} # Initialize with index
                 try:
                     shape = page.Shapes.Item(i)
+                    shape_data["shape"] = shape
+                    shape_data["id"] = shape.ID
 
-                    # Get basic shape properties
-                    shape_data = {
-                        "index": i,
-                        "id": shape.ID,
-                        "name": shape.Name,
-                        "text": shape.Text if hasattr(shape, "Text") else "",
-                        "type": shape.Type,
-                        "master": shape.Master.Name if shape.Master else "None",
-                        "width": shape.Width,
-                        "height": shape.Height,
-                        "position_x": shape.Cells("PinX").Result(""),
-                        "position_y": shape.Cells("PinY").Result(""),
-                        "shape": shape  # Store the actual shape object
-                    }
+                    # Get properties with individual error handling
+                    try: shape_data["name"] = shape.Name
+                    except Exception: shape_data["name"] = f"Unnamed Shape (ID: {shape.ID})"
+
+                    try: shape_data["text"] = shape.Text if hasattr(shape, "Text") else ""
+                    except Exception: shape_data["text"] = "[Error Reading Text]"
+
+                    try: shape_data["type"] = shape.Type
+                    except Exception: shape_data["type"] = None
+
+                    try: shape_data["master"] = shape.Master.Name if shape.Master else "None"
+                    except Exception: shape_data["master"] = "[Error Reading Master]"
+
+                    try: shape_data["width"] = shape.Width
+                    except Exception as e_width: 
+                        logger.debug(f"Error accessing Width for shape index {i} (ID: {shape.ID}): {e_width}")
+                        shape_data["width"] = 0.0
+
+                    try: shape_data["height"] = shape.Height
+                    except Exception as e_height:
+                        logger.debug(f"Error accessing Height for shape index {i} (ID: {shape.ID}): {e_height}")
+                        shape_data["height"] = 0.0
+
+                    try: shape_data["position_x"] = shape.Cells("PinX").Result("")
+                    except Exception as e_x:
+                        logger.warning(f"Error accessing PinX for shape index {i} (ID: {shape.ID}): {e_x}")
+                        shape_data["position_x"] = 0.0
+
+                    try: shape_data["position_y"] = shape.Cells("PinY").Result("")
+                    except Exception as e_y:
+                        logger.warning(f"Error accessing PinY for shape index {i} (ID: {shape.ID}): {e_y}")
+                        shape_data["position_y"] = 0.0
 
                     shapes.append(shape_data)
+
                 except Exception as e:
-                    logger.error(f"Error accessing shape at index {i}: {str(e)}")
+                    # Log error for accessing the shape item itself
+                    logger.error(f"Critical error accessing shape object at index {i}: {str(e)}")
+                    # Append minimal data if possible
+                    shape_data["id"] = shape_data.get("id", "[Unknown ID]") # Try to get ID if already fetched
+                    shape_data["name"] = "[Error Accessing Shape Object]"
+                    shapes.append(shape_data)
                     continue
 
             return shapes

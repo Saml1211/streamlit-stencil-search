@@ -264,8 +264,8 @@ def initialize_session_state():
     # Visio Control state
     if 'visio_control_active_tab' not in st.session_state:
         st.session_state.visio_control_active_tab = "Documents"
-    if 'new_doc_name' not in st.session_state:
-        st.session_state.new_doc_name = "New Document"
+    if 'visio_control_new_doc_name' not in st.session_state:
+        st.session_state.visio_control_new_doc_name = "New Document"
     if 'new_page_name' not in st.session_state:
         st.session_state.new_page_name = "New Page"
     if 'selected_shape_id' not in st.session_state:
@@ -292,6 +292,9 @@ def initialize_session_state():
         st.session_state.new_shape_y = 4.0
     if 'selected_shapes_for_alignment' not in st.session_state:
         st.session_state.selected_shapes_for_alignment = []
+    # Add state for batch selection in explorer
+    if 'selected_shapes_for_batch' not in st.session_state:
+        st.session_state.selected_shapes_for_batch = {} # Dict to store {unique_id: shape_data}
 
 # Initialize all session state variables
 initialize_session_state()
@@ -302,6 +305,93 @@ import modules.Temp_File_Cleaner as cleaner
 import modules.Stencil_Health as health
 import modules.Visio_Control as visiocontrol
 
+# --- Batch Action Callbacks ---
+def handle_batch_import():
+    if not visio.is_connected():
+        st.sidebar.error("Visio not connected.")
+        return
+
+    selected_shapes = st.session_state.get('selected_shapes_for_batch', {})
+    if not selected_shapes:
+        st.sidebar.warning("No shapes selected for import.")
+        return
+
+    # Prepare shapes for import (only those from stencils)
+    shapes_to_import = []
+    for unique_id, shape_data in selected_shapes.items():
+        if not shape_data.get('is_document_shape'): # Only import shapes from stencils
+            shapes_to_import.append({
+                "path": shape_data.get('stencil_path'),
+                "name": shape_data.get('shape_name')
+            })
+
+    if not shapes_to_import:
+        st.sidebar.warning("No stencil shapes selected for import.")
+        return
+
+    doc_index = st.session_state.get('selected_doc_index', 1)
+    page_index = st.session_state.get('selected_page_index', 1)
+
+    with st.spinner(f"Importing {len(shapes_to_import)} shapes..."):
+        success_count, total_count = visio.import_multiple_shapes(shapes_to_import, doc_index, page_index)
+
+    if success_count > 0:
+        st.sidebar.success(f"Imported {success_count}/{total_count} shapes.")
+        # Optionally clear selection after successful import
+        # st.session_state.selected_shapes_for_batch = {}
+    else:
+        st.sidebar.error(f"Failed to import shapes (Imported {success_count}/{total_count}).")
+
+def handle_batch_add_favorites():
+    selected_shapes = st.session_state.get('selected_shapes_for_batch', {})
+    if not selected_shapes:
+        st.sidebar.warning("No shapes selected to add to favorites.")
+        return
+
+    db = StencilDatabase()
+    added_count = 0
+    error_count = 0
+    skipped_count = 0
+
+    with st.spinner(f"Adding {len(selected_shapes)} items to favorites..."):
+        for unique_id, shape_data in selected_shapes.items():
+            try:
+                if shape_data.get('is_document_shape'):
+                    # Add document shape by ID (if shape_id exists)
+                    shape_id = shape_data.get('shape_id')
+                    stencil_path_for_fav = shape_data.get('stencil_path') # This is the special visio_doc_... path
+                    # We need a real stencil path to link in favorites. This feature might not be fully compatible.
+                    # For now, we'll skip adding live document shapes to favorites directly via batch.
+                    # A better approach might be to favorite the *source* stencil/shape if identifiable.
+                    # logger.warning(f"Skipping favorite for document shape ID {shape_id} - feature needs refinement.")
+                    skipped_count += 1
+                    continue # Skip document shapes for now
+                else:
+                    # Add stencil shape by path and shape_id
+                    stencil_path = shape_data.get('stencil_path')
+                    shape_id = shape_data.get('shape_id') # Assumes shape_id is in the dict from db search
+                    if stencil_path and shape_id:
+                         fav_result = db.add_favorite_shape_by_id(stencil_path, shape_id)
+                         if fav_result: # Check if it returned a valid dict (meaning success or already existed)
+                             added_count += 1
+                         else: # Likely an error or shape not found
+                             error_count += 1
+                    else:
+                         skipped_count += 1 # Missing data to add favorite
+            except Exception as e:
+                # logger.error(f"Error adding favorite for {unique_id}: {e}")
+                error_count += 1
+    db.close()
+
+    if added_count > 0:
+        st.sidebar.success(f"Added {added_count} shapes to favorites.")
+    if error_count > 0:
+        st.sidebar.error(f"Failed to add {error_count} shapes to favorites.")
+    if skipped_count > 0:
+        st.sidebar.warning(f"Skipped {skipped_count} items (e.g., document shapes or missing data).)")
+    # Optionally clear selection
+    # st.session_state.selected_shapes_for_batch = {}
+
 # Render the shared sidebar once for the entire application
 selected_directory = render_shared_sidebar(key_prefix="main_")
 
@@ -310,13 +400,23 @@ with st.sidebar:
     with st.expander("Batch Actions", expanded=False):
         st.markdown("Perform actions on all selected shapes")
 
-        st.button("Batch Import to Visio", key="batch_import_btn_main")
-        st.button("Add Selected to Favorites", key="batch_favorites_btn_main")
-        st.button("Remove Selected from Collection", key="batch_remove_btn_main")
+        # Display number of selected items
+        selected_count = len(st.session_state.get('selected_shapes_for_batch', {}))
+        if selected_count > 0:
+            st.caption(f"{selected_count} item(s) selected")
+        else:
+            st.caption("Select shapes in results to enable actions.")
+
+        # Disable buttons if nothing is selected
+        disable_buttons = selected_count == 0
+
+        st.button("Batch Import to Visio", key="batch_import_btn_main", on_click=handle_batch_import, disabled=disable_buttons)
+        st.button("Add Selected to Favorites", key="batch_favorites_btn_main", on_click=handle_batch_add_favorites, disabled=disable_buttons)
+        st.button("Remove Selected from Collection", key="batch_remove_btn_main", disabled=disable_buttons) # Add on_click later
 
         # Placeholder for future tagging UI
-        st.text_input("Add Tags (comma-separated)", key="batch_add_tags_input_main")
-        st.button("Assign Tags to Selected", key="batch_assign_tags_btn_main")
+        st.text_input("Add Tags (comma-separated)", key="batch_add_tags_input_main", disabled=disable_buttons)
+        st.button("Assign Tags to Selected", key="batch_assign_tags_btn_main", disabled=disable_buttons) # Add on_click later
 
 # Create tabbed main content
 tabs = st.tabs(["🔍 Visio Stencil Explorer", "🧹 Temp File Cleaner", "🧪 Stencil Health", "🎮 Visio Control"])
