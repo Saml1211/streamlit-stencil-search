@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { VisioIntegrationPanel } from "@/components/VisioIntegrationPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -155,6 +156,42 @@ export default function HomePage() {
   const [selectedShapeId, setSelectedShapeId] = useState<number | null>(null);
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
+  // --- Batch Selection & Add-to-Collection State ---
+  const [selectedShapeIds, setSelectedShapeIds] = useState<number[]>([]);
+  const [isBatchDialogOpen, setIsBatchDialogOpen] = useState(false);
+
+  // Batch selection toggle handler
+  const handleToggleShapeSelect = (shapeId: number) => {
+    setSelectedShapeIds((prev) =>
+      prev.includes(shapeId)
+        ? prev.filter((id) => id !== shapeId)
+        : [...prev, shapeId]
+    );
+  };
+
+  // Batch Add to Collection Mutation/Query
+  const { data: collections, isLoading: collectionsLoading } = useCollections();
+  const batchAddMutation = useUpdateCollection({
+    onSuccess: () => {
+      setIsBatchDialogOpen(false);
+      setSelectedShapeIds([]);
+      toast.success("Shapes added to collection.");
+    },
+    onError: (error) => {
+      const apiError = error as ApiError;
+      toast.error("Batch Add Failed", {
+        description: apiError?.detail || apiError?.message || "Could not add shapes to collection.",
+      });
+    },
+  });
+
+  const handleBatchAddToCollection = (collectionId: number) => {
+    batchAddMutation.mutate({
+      id: collectionId,
+      payload: { add_shape_ids: selectedShapeIds },
+    });
+  };
+
   const RESULTS_PER_PAGE = 12;
 
   const { data: searchData, isLoading, isError, error, isFetching } = useSearchShapes(
@@ -213,6 +250,7 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto p-4 md:p-6">
+      <VisioIntegrationPanel />
       <h1 className="text-3xl font-bold mb-6">Stencil Search</h1>
       <div className="mb-6">
         <Input
@@ -247,8 +285,15 @@ export default function HomePage() {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {searchData.results.map((shape) => (
-              <Card key={shape.shape_id} className="flex flex-col">
-                <CardHeader className="pb-2">
+              <Card key={shape.shape_id} className={`flex flex-col ${selectedShapeIds.includes(shape.shape_id) ? "ring-2 ring-primary" : ""}`}>
+                <CardHeader className="pb-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedShapeIds.includes(shape.shape_id)}
+                    onChange={() => handleToggleShapeSelect(shape.shape_id)}
+                    className="accent-primary h-4 w-4"
+                    aria-label="Select shape for batch operation"
+                  />
                   <DialogTrigger asChild onClick={() => setSelectedShapeId(shape.shape_id)}>
                      <CardTitle className="text-base font-medium truncate hover:text-primary cursor-pointer" title={shape.shape_name}>
                         {shape.shape_name}
@@ -293,6 +338,71 @@ export default function HomePage() {
           )}
         </>
       )}
+
+      {/* Batch Add To Collection Bar */}
+      {selectedShapeIds.length > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-background/95 border border-border shadow-lg rounded-lg px-6 py-4 z-50 flex items-center gap-4 animate-slide-up">
+          <span className="font-medium">{selectedShapeIds.length} selected</span>
+          <Button
+            variant="default"
+            className="flex items-center gap-2"
+            onClick={() => setIsBatchDialogOpen(true)}
+            disabled={batchAddMutation.isPending}
+          >
+            <FolderPlus className="h-4 w-4" />
+            Add to Collection
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setSelectedShapeIds([])}
+            disabled={batchAddMutation.isPending}
+          >
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
+      {/* Batch Add Dialog */}
+      <Dialog open={isBatchDialogOpen} onOpenChange={setIsBatchDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Selected Shapes to Collection</DialogTitle>
+          </DialogHeader>
+          {collectionsLoading ? (
+            <div className="flex items-center gap-2 p-4">
+              <Loader2 className="animate-spin h-5 w-5" />
+              Loading collections...
+            </div>
+          ) : (
+            <>
+              <div className="mb-3">Choose a collection to add <b>{selectedShapeIds.length}</b> shapes:</div>
+              <div className="grid gap-2 max-h-40 overflow-y-auto">
+                {collections && collections.length > 0 ? (
+                  collections.map((col) => (
+                    <Button
+                      key={col.id}
+                      variant="outline"
+                      className="justify-start"
+                      disabled={batchAddMutation.isPending}
+                      onClick={() => handleBatchAddToCollection(col.id)}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      {col.name}
+                    </Button>
+                  ))
+                ) : (
+                  <div className="text-muted-foreground">No collections found.</div>
+                )}
+              </div>
+            </>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBatchDialogOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
        {searchData && searchData.total === 0 && !isLoading && debouncedSearchTerm.length > 0 && (
          <p className="text-center text-muted-foreground mt-8">No results found for "{debouncedSearchTerm}".</p>
