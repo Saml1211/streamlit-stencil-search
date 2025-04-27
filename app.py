@@ -24,6 +24,12 @@ from app.core.components import directory_preset_manager, render_shared_sidebar
 from app.core.db import StencilDatabase
 from app.core.custom_styles import inject_custom_css
 from app.core.logging_utils import setup_logger, get_logger
+from app.core.preferences import UserPreferences
+
+# Create a cached singleton user preferences instance
+@st.cache_resource
+def get_user_preferences():
+    return UserPreferences()
 
 # Set up application logging
 app_logger = setup_logger(
@@ -33,127 +39,138 @@ app_logger = setup_logger(
     log_dir="logs"
 )
 
-# Set up exception handling
-def handle_exception(exc_type, exc_value, exc_traceback):
-    """Global exception handler to log unhandled exceptions"""
-    if issubclass(exc_type, KeyboardInterrupt):
-        # Don't log keyboard interrupt
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
+# --- Begin graceful shutdown wrapper for event loop errors ---
+try:
+    # Set up exception handling
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        """Global exception handler to log unhandled exceptions"""
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Don't log keyboard interrupt
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
 
-    app_logger.critical("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
+        app_logger.critical("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
 
-# Set the exception hook
-sys.excepthook = handle_exception
+    # Set the exception hook
+    sys.excepthook = handle_exception
 
-# Log application startup
-app_logger.info(f"Starting Visio Stencil Explorer v{config.get('app.version', '1.0.0')}")
+    # Log application startup
+    app_logger.info(f"Starting Visio Stencil Explorer v{config.get('app.version', '1.0.0')}")
 
-# Initialize the database and rebuild the FTS index if needed
-@st.cache_resource
-def initialize_database():
-    """Initialize the database and ensure the FTS index is built"""
-    # Print a clear header
-    app_logger.info("Initializing database")
+    # Initialize the database and rebuild the FTS index if needed
+    @st.cache_resource
+    def initialize_database():
+        """Initialize the database and ensure the FTS index is built"""
+        # Print a clear header
+        app_logger.info("Initializing database")
 
-    # Check if database file exists and is not corrupted
-    db_path = config.get("paths.database", "data/stencil_cache.db")
-    try:
-        # Try to open the database and check integrity
-        import sqlite3
-        import os
-
-        # If database doesn't exist, we'll create it normally
-        if not os.path.exists(db_path):
-            app_logger.info(f"Database file {db_path} does not exist, will create new database")
-        else:
-            # Check if database is corrupted
-            try:
-                test_conn = sqlite3.connect(db_path)
-                integrity_result = test_conn.execute("PRAGMA integrity_check").fetchone()[0]
-                test_conn.close()
-
-                if integrity_result != "ok":
-                    app_logger.error(f"Database integrity check failed: {integrity_result}")
-                    # Backup and recreate database
-                    backup_and_recreate_db(db_path)
-            except sqlite3.OperationalError as e:
-                if "database disk image is malformed" in str(e):
-                    app_logger.error(f"Database corruption detected: {e}")
-                    # Backup and recreate database
-                    backup_and_recreate_db(db_path)
-                else:
-                    app_logger.error(f"SQLite error: {e}")
-            except Exception as e:
-                app_logger.error(f"Error checking database integrity: {e}")
-    except Exception as e:
-        app_logger.error(f"Error during database pre-check: {e}")
-
-    db = StencilDatabase()
-    try:
-        # The integrity check happens automatically during initialization
-
-        # Attempt to rebuild the FTS index - this is a no-op if already built
-        app_logger.debug("Rebuilding FTS index if needed")
-        rebuild_result = db.rebuild_fts_index()
-        if rebuild_result:
-            app_logger.info("FTS index initialized successfully")
-        else:
-            app_logger.warning("FTS index initialization failed - will use standard search")
-
-        # Run a quick count to verify database is working
+        # Check if database file exists and is not corrupted
+        db_path = config.get("paths.database", "data/stencil_cache.db")
         try:
-            conn = db._get_conn()
-            stencil_count = conn.execute("SELECT COUNT(*) FROM stencils").fetchone()[0]
-            shape_count = conn.execute("SELECT COUNT(*) FROM shapes").fetchone()[0]
-            app_logger.info(f"Database contains {stencil_count} stencils and {shape_count} shapes")
-        except Exception as count_error:
-            app_logger.error(f"Error counting database records: {count_error}")
-    except Exception as e:
-        app_logger.error(f"Error initializing database: {e}")
-        app_logger.error(traceback.format_exc())
-    finally:
-        db.close()
+            # Try to open the database and check integrity
+            import sqlite3
+            import os
 
-    app_logger.info("Database initialization complete")
-    return True
+            # If database doesn't exist, we'll create it normally
+            if not os.path.exists(db_path):
+                app_logger.info(f"Database file {db_path} does not exist, will create new database")
+            else:
+                # Check if database is corrupted
+                try:
+                    test_conn = sqlite3.connect(db_path)
+                    integrity_result = test_conn.execute("PRAGMA integrity_check").fetchone()[0]
+                    test_conn.close()
 
-def backup_and_recreate_db(db_path):
-    """Backup and recreate a corrupted database"""
-    import os
-    import shutil
-    from datetime import datetime
+                    if integrity_result != "ok":
+                        app_logger.error(f"Database integrity check failed: {integrity_result}")
+                        # Backup and recreate database
+                        backup_and_recreate_db(db_path)
+                except sqlite3.OperationalError as e:
+                    if "database disk image is malformed" in str(e):
+                        app_logger.error(f"Database corruption detected: {e}")
+                        # Backup and recreate database
+                        backup_and_recreate_db(db_path)
+                    else:
+                        app_logger.error(f"SQLite error: {e}")
+                except Exception as e:
+                    app_logger.error(f"Error checking database integrity: {e}")
+        except Exception as e:
+            app_logger.error(f"Error during database pre-check: {e}")
 
-    try:
-        # Create a backup of the corrupt database
-        backup_path = f"{db_path}.backup.{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        if os.path.exists(db_path):
-            shutil.copy2(db_path, backup_path)
-            app_logger.info(f"Created database backup at {backup_path}")
+        db = StencilDatabase()
+        try:
+            # The integrity check happens automatically during initialization
 
-            # Remove the corrupted database
-            os.remove(db_path)
-            app_logger.info(f"Removed corrupted database file {db_path}")
+            # Attempt to rebuild the FTS index - this is a no-op if already built
+            app_logger.debug("Rebuilding FTS index if needed")
+            rebuild_result = db.rebuild_fts_index()
+            if rebuild_result:
+                app_logger.info("FTS index initialized successfully")
+            else:
+                app_logger.warning("FTS index initialization failed - will use standard search")
 
-            # A new database will be created automatically when StencilDatabase is initialized
-            app_logger.info("Database will be recreated on next access")
-            return True
-    except Exception as e:
-        app_logger.error(f"Error backing up database: {e}")
-        return False
+            # Run a quick count to verify database is working
+            try:
+                conn = db._get_conn()
+                stencil_count = conn.execute("SELECT COUNT(*) FROM stencils").fetchone()[0]
+                shape_count = conn.execute("SELECT COUNT(*) FROM shapes").fetchone()[0]
+                app_logger.info(f"Database contains {stencil_count} stencils and {shape_count} shapes")
+            except Exception as count_error:
+                app_logger.error(f"Error counting database records: {count_error}")
+        except Exception as e:
+            app_logger.error(f"Error initializing database: {e}")
+            app_logger.error(traceback.format_exc())
+        finally:
+            db.close()
 
-# Initialize the database at startup
-_ = initialize_database()
+        app_logger.info("Database initialization complete")
+        return True
 
-# Page config is already set at the top of the file
-# No need to set it again here
+    def backup_and_recreate_db(db_path):
+        """Backup and recreate a corrupted database"""
+        import os
+        import shutil
+        from datetime import datetime
 
-# Initialize ALL session state values needed by all pages BEFORE any UI is created
-def initialize_session_state():
-    """Initialize all session state variables in a single function"""
+        try:
+            # Create a backup of the corrupt database
+            backup_path = f"{db_path}.backup.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            if os.path.exists(db_path):
+                shutil.copy2(db_path, backup_path)
+                app_logger.info(f"Created database backup at {backup_path}")
+
+                # Remove the corrupted database
+                os.remove(db_path)
+                app_logger.info(f"Removed corrupted database file {db_path}")
+
+                # A new database will be created automatically when StencilDatabase is initialized
+                app_logger.info("Database will be recreated on next access")
+                return True
+        except Exception as e:
+            app_logger.error(f"Error backing up database: {e}")
+            return False
+
+    # Initialize the database at startup
+    _ = initialize_database()
+
+    # Page config is already set at the top of the file
+    # No need to set it again here
+
+    # Initialize ALL session state values needed by all pages BEFORE any UI is created
+    def initialize_session_state():
+        """Initialize all session state variables in a single function."""
+        prefs = get_user_preferences()
+
+except RuntimeError as e:
+    # Gracefully handle shutdown event loop error without traceback
+    if "Event loop is closed" in str(e):
+        app_logger.info("Event loop closed during shutdown; exception suppressed.")
+    else:
+        raise
+
     # Directory and UI state
     if 'last_dir' not in st.session_state:
-        # Set default directory from user preferences
+        # Set default directory from user preferences, if available (not persisted in preferences)
         default_dir = config.get("user_preferences.default_startup_directory", config.get("paths.stencil_directory", "./test_data"))
         st.session_state.last_dir = default_dir
     if 'show_filters' not in st.session_state:
@@ -165,11 +182,21 @@ def initialize_session_state():
     if 'initial_load_complete' not in st.session_state:
         st.session_state.initial_load_complete = False
 
-    # Search preferences
+    # Persistent user preferences mapped to session state
+    if 'search_in_document' not in st.session_state:
+        st.session_state.search_in_document = prefs.get("document_search")
     if 'use_fts_search' not in st.session_state:
-        st.session_state.use_fts_search = config.get("user_preferences.default_search_mode", True)
+        st.session_state.use_fts_search = prefs.get("fts")
     if 'search_result_limit' not in st.session_state:
-        st.session_state.search_result_limit = config.get("user_preferences.default_result_limit", 1000)
+        st.session_state.search_result_limit = prefs.get("results_per_page")
+    if 'pagination_enabled' not in st.session_state:
+        st.session_state.pagination_enabled = prefs.get("pagination")
+    if 'ui_theme' not in st.session_state:
+        st.session_state.ui_theme = prefs.get("ui_theme")
+    if 'visio_auto_refresh' not in st.session_state:
+        st.session_state.visio_auto_refresh = prefs.get("visio_auto_refresh")
+
+    # Any other legacy/config-driven session state
     if 'show_metadata_columns' not in st.session_state:
         st.session_state.show_metadata_columns = config.get("user_preferences.show_metadata_columns", False)
     if 'current_search_term' not in st.session_state:
@@ -180,8 +207,6 @@ def initialize_session_state():
         st.session_state.search_history = []
     if 'search_results' not in st.session_state:
         st.session_state.search_results = []
-    if 'search_in_document' not in st.session_state:
-        st.session_state.search_in_document = False
 
     # Visio integration
     if 'visio_connected' not in st.session_state:

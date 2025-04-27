@@ -1,0 +1,29 @@
+/* Custom styles for Visio Stencil Explorer */
+
+/* Badge base style */
+.badge-source {
+  display: inline-block;
+  padding: 0.18em 0.7em;
+  font-size: 0.85em;
+  font-weight: 600;
+  border-radius: 1.1em;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  margin-right: 0.5em;
+  letter-spacing: 0.03em;
+  user-select: none;
+  line-height: 1.1;
+  border: none;
+}
+
+/* Stencil badge (neutral gray) */
+.badge-stencil {
+  background-color: #e6e8ec;
+  color: #2e333a;
+}
+
+/* Document badge (blue) */
+.badge-document {
+  background-color: #1976d2;
+  color: #fff;
+}

@@ -3,6 +3,7 @@ import sys
 import logging
 import re
 from typing import List, Dict, Tuple, Optional, Any
+from app.core.error_utils import handle_visio_errors
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -11,13 +12,19 @@ logger = logging.getLogger("visio_integration")
 # Flag to track if win32com is available
 win32com_available = False
 
-try:
-    import win32com.client
-    import pythoncom  # Import pythoncom for COM initialization
-    from win32com.client import constants as const
-    win32com_available = True
-except ImportError:
-    logger.warning("win32com not available. Visio integration features will be disabled.")
+# Platform-aware win32com initialization
+import sys
+if sys.platform == "win32":
+    try:
+        import win32com.client
+        import pythoncom  # Import pythoncom for COM initialization
+        from win32com.client import constants as const
+        win32com_available = True
+    except ImportError:
+        logger.warning("win32com not available. Visio integration features will be disabled.")
+else:
+    # On non-Windows platforms, do not attempt win32com import or warn—just disable integration.
+    logger.info("Visio integration is disabled: Not running on Windows platform.")
 
 class VisioIntegration:
     """Class for integrating with Microsoft Visio via COM"""
@@ -68,6 +75,7 @@ class VisioIntegration:
             self.visio_app = None
             return False
 
+    @handle_visio_errors
     def connect(self, server_name: str = None) -> bool:
         """Connect to an existing Visio instance or create a new one
 
@@ -144,10 +152,12 @@ class VisioIntegration:
             self.visio_app = None
             return False
 
+    @handle_visio_errors
     def is_connected(self) -> bool:
         """Check if connected to Visio"""
         return self._test_connection()
 
+    @handle_visio_errors
     def is_visio_installed(self) -> bool:
         """Check if Visio is installed on the system
 
@@ -171,6 +181,7 @@ class VisioIntegration:
             logger.error(f"Error checking if Visio is installed: {str(e)}")
             return False
 
+    @handle_visio_errors
     def launch_visio(self) -> bool:
         """Launch Visio application
 
@@ -202,6 +213,7 @@ class VisioIntegration:
             self.visio_app = None
             return False
 
+    @handle_visio_errors
     def get_open_documents(self) -> List[Dict[str, Any]]:
         """Get list of open Visio documents"""
         documents = []
@@ -261,6 +273,7 @@ class VisioIntegration:
 
         return documents
 
+    @handle_visio_errors
     def get_pages_in_document(self, doc_index: int) -> List[Dict[str, Any]]:
         """Get list of pages in a Visio document"""
         pages = []
@@ -306,6 +319,7 @@ class VisioIntegration:
 
         return pages
 
+    @handle_visio_errors
     def get_default_document_page(self) -> Tuple[int, int, bool]:
         """
         Finds the most appropriate default document and page to use
@@ -359,6 +373,7 @@ class VisioIntegration:
             self.visio_app = None
             return 1, 1, False
 
+    @handle_visio_errors
     def import_shape_to_visio(self, stencil_path: str, shape_name: str,
                               doc_index: int = 1, page_index: int = 1,
                               x_pos: float = 4.0, y_pos: float = 4.0) -> bool:
@@ -445,6 +460,7 @@ class VisioIntegration:
                 except:
                     pass
 
+    @handle_visio_errors
     def import_multiple_shapes(self, shapes: List[Dict[str, str]],
                                doc_index: int = 1, page_index: int = 1) -> Tuple[int, int]:
         """
@@ -565,6 +581,7 @@ class VisioIntegration:
                 except:
                     pass
 
+    @handle_visio_errors
     def get_default_document_page(self) -> Tuple[int, int, bool]:
         """Get the default document and page indices
 
@@ -605,6 +622,7 @@ class VisioIntegration:
             logger.error(f"Error getting default document and page: {str(e)}")
             return doc_index, page_index, found_valid
 
+    @handle_visio_errors
     def create_new_document(self, doc_name: str = "New Document") -> bool:
         """Create a new Visio document
 
@@ -633,6 +651,7 @@ class VisioIntegration:
             self.visio_app = None
             return False
 
+    @handle_visio_errors
     def close_document(self, doc_index: int, save_changes: bool = True) -> bool:
         """Close a Visio document
 
@@ -679,6 +698,7 @@ class VisioIntegration:
             self.visio_app = None
             return False
 
+    @handle_visio_errors
     def create_new_page(self, doc_index: int, page_name: str = "New Page") -> bool:
         """Create a new page in a Visio document
 

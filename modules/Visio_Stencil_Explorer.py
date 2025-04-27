@@ -12,11 +12,67 @@ from typing import List, Dict, Any, Optional
 # Add the parent directory to path so we can import from core
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# --- Performance Enhancements ---
+from app.core.utils import DebounceSearch
+from app.core.preview_cache import PreviewCache
+
+from app.core.query_parser import parse_search_query
 from app.core import config
 from app.core import scan_directory, parse_visio_stencil, get_shape_preview, visio, directory_preset_manager
 from app.core.db import StencilDatabase
 from app.core.components import render_shared_sidebar
 from app.core.custom_styles import inject_spacer
+from app.core.logging_utils import MemoryStreamHandler, LOG_LEVELS, get_logger
+
+# Setup in-memory log handler for diagnostics panel
+_logger_name = "visio_integration"
+_mem_handler = MemoryStreamHandler(capacity=100)
+_logger = get_logger(_logger_name)
+if not any(isinstance(h, MemoryStreamHandler) for h in _logger.handlers):
+    _logger.addHandler(_mem_handler)
+
+def diagnostics_sidebar():
+    """Render Diagnostics panel: log level, live logs, copy-to-clipboard."""
+    import streamlit as st
+
+    st.sidebar.markdown("### Diagnostics")
+    log_level = st.sidebar.selectbox(
+        "Log Level",
+        options=list(LOG_LEVELS.keys()),
+        index=list(LOG_LEVELS.keys()).index("info"),
+        key="diagnostics_log_level"
+    )
+    # Set log level dynamically
+    _logger.setLevel(LOG_LEVELS[log_level])
+    for h in _logger.handlers:
+        h.setLevel(LOG_LEVELS[log_level])
+
+    logs = _mem_handler.get_latest_logs()
+    log_text = "\n".join(logs)
+    st.sidebar.text_area(
+        "Recent Logs",
+        log_text,
+        height=200,
+        key="diagnostics_log_text"
+    )
+
+    # JS clipboard copy hack
+    copy_code = """
+    <script>
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text);
+    }
+    const btn = document.getElementById("copy-logs-btn");
+    if (btn) {
+        btn.onclick = function() {
+            copyToClipboard(document.getElementById("log-textarea").value);
+        }
+    }
+    </script>
+    """
+    st.sidebar.markdown('<textarea id="log-textarea" style="display:none;">{}</textarea>'.format(log_text), unsafe_allow_html=True)
+    st.sidebar.button("Copy logs", key="copy-logs-btn")
+    st.sidebar.markdown(copy_code, unsafe_allow_html=True)
 
 # Page config is now set in app.py to avoid the 'set_page_config must be first' error
 # st.set_page_config(
@@ -25,6 +81,14 @@ from app.core.custom_styles import inject_spacer
 #     layout="wide",
 #     initial_sidebar_state="expanded",
 # )
+
+from app.core.preferences import UserPreferences
+
+import streamlit as st
+
+@st.cache_resource
+def get_user_preferences():
+    return UserPreferences()
 
 # Session state is now initialized in app.py
 # No need to initialize session state variables here
@@ -188,32 +252,86 @@ def toggle_options():
 
 def search_stencils_db(search_term: str, filters: dict, directory_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Search the stencil database using the optimized search method.
+    Search the stencil database using the optimized search method, supporting advanced search queries.
 
     Args:
-        search_term (str): The term to search for in shape names.
-        filters (dict): A dictionary containing filter values from session state.
+        search_term (str): The user query string (AND/OR/phrases/NOT/property).
+        filters (dict): Dictionary of filter values from session state.
         directory_filter (Optional[str]): Path to filter stencils by.
 
     Returns:
-        List[Dict[str, Any]]: A list of matching shapes with stencil info.
+        List[Dict[str, Any]]: List of matching shapes with stencil info.
     """
     if not search_term:
         return []  # Don't search if term is empty
 
     try:
+        # New: Advanced query parsing
+        parsed_query = parse_search_query(search_term)
+
+        # Build FTS string for DB
+        fts_terms = []
+        # AND logic: join with space
+        if parsed_query["and"]:
+            fts_terms.append(" ".join(f'"{t}"' if " " in t else t for t in parsed_query["and"]))
+        # OR logic: join with OR syntax
+        if parsed_query["or"]:
+            or_group = " OR ".join(f'"{t}"' if " " in t else t for t in parsed_query["or"])
+            fts_terms.append(f"({or_group})")
+        # If nothing in AND/OR, fall back to empty string to avoid blank queries
+        if not fts_terms:
+            fts_str = ""
+        else:
+            fts_str = " ".join(fts_terms)
+
         db = StencilDatabase()
-        # Use the new optimized search method
         use_fts = st.session_state.get('use_fts_search', True)
+        # If no advanced query detected, fallback to raw search term
+        db_search_term = fts_str if fts_str else search_term
+
         results = db.search_shapes(
-            search_term=search_term,
+            search_term=db_search_term,
             filters=filters,
             use_fts=use_fts,
             limit=st.session_state.get('search_result_limit', 1000),
-            directory_filter=directory_filter # Pass directory_filter to db method
+            directory_filter=directory_filter
         )
         db.close()
-        return results
+
+        # Post-filter for NOT and properties
+        filtered_results = []
+        not_terms = set(t.lower() for t in parsed_query["not"])
+        prop_filters = {k.lower(): v for k, v in parsed_query["properties"].items()}
+
+        for row in results:
+            # Gather all searchable fields into a lowercased string for NOT logic
+            haystack = " ".join(
+                str(row.get(k, "")).lower()
+                for k in ("shape_name", "shape", "stencil_name", "description", "tags", "category")
+                if k in row
+            )
+            # Exclude if any NOT term is present
+            if any(nt in haystack for nt in not_terms):
+                continue
+
+            # Property filter: expects shape property dict/field in 'properties' or 'props'
+            prop_data = row.get("properties") or row.get("props") or {}
+            props_lc = {str(k).lower(): str(v).lower() for k, v in prop_data.items()} if isinstance(prop_data, dict) else {}
+            prop_match = True
+            for k, v in prop_filters.items():
+                # supports substring match (case-insensitive) for property values
+                valmatch = (
+                    k in props_lc and v.lower() in str(props_lc[k]).lower()
+                )
+                if not valmatch:
+                    prop_match = False
+                    break
+            if not prop_match and prop_filters:
+                continue
+
+            filtered_results.append(row)
+
+        return filtered_results
 
     except Exception as e:
         st.error(f"Database search error: {e}")
@@ -328,32 +446,43 @@ def perform_search():
             'property_value': st.session_state.filter_property_value
         }
 
-        # --- DEBUG PRINT --- 
+        # --- DEBUG PRINT ---
         print(f"--- Performing Search ---")
         print(f"Term: '{search_term}'")
         print(f"Filters: {filters}")
         print(f"Active Directory: {active_directory}")
-        print(f"Search in Document: {st.session_state.get('search_in_document_checkbox', False)}")
+        print(f"Search in Document: {st.session_state.get('search_in_document', False)}")
         # --- END DEBUG PRINT ---
 
-        # Initialize results list
         results = []
 
         # Search in stencil database, passing the active directory filter
         db_results = search_stencils_db(search_term, filters, directory_filter=active_directory)
+        # Inject result_source for stencil_directory
+        for r in db_results:
+            r["result_source"] = "stencil_directory"
+            # Also set shape_name fallback if not present
+            if "shape_name" not in r and "shape" in r:
+                r["shape_name"] = r["shape"]
+
         results.extend(db_results)
 
         # Search in current document if option is enabled
-        if st.session_state.get('search_in_document_checkbox', False):
+        if st.session_state.get('search_in_document', False):
             doc_results = search_current_document(search_term)
-            # --- Add duplicate check --- 
+            # Inject result_source for visio_document
+            for r in doc_results:
+                r["result_source"] = "visio_document"
+                if "shape_name" not in r and "shape" in r:
+                    r["shape_name"] = r["shape"]
+            # --- Add duplicate check ---
             existing_doc_shape_ids = {r['shape_id'] for r in results if r.get('is_document_shape')}
             for doc_shape in doc_results:
                 if doc_shape['shape_id'] not in existing_doc_shape_ids:
                     results.append(doc_shape)
-            # --- End duplicate check --- 
+            # --- End duplicate check ---
 
-        # --- Apply limit to the combined results --- 
+        # --- Apply limit to the combined results ---
         limit = st.session_state.get('search_result_limit', 1000)
         final_results = results[:limit]
         # --- End limit application ---
@@ -365,6 +494,13 @@ def perform_search():
         st.session_state.search_results = []
 
 def main(selected_directory=None):
+    # Inject custom CSS styles for badges using unsafe_allow_html
+    try:
+        with open("custom_styles.css", "r") as f:
+            custom_css = f.read()
+        st.markdown(f"<style>{custom_css}</style>", unsafe_allow_html=True)
+    except Exception:
+        pass
     # No need to initialize session state here as it's done in app.py
     # Page title
     st.title("Visio Stencil Explorer")
@@ -390,8 +526,141 @@ def main(selected_directory=None):
 
         Use the search options to filter and find exactly what you need.
         Enable "Search in Current Document" in the search options to find shapes in your open Visio document.
+
+        ---
+        ### Advanced Search Syntax
+
+        You can use advanced queries in the search bar to find exactly what you need:
+
+        **Supported features:**
+        - **AND** (default): Separate terms by spaces. Both must match.
+          `network switch` &rarr; finds shapes with both "network" and "switch"
+        - **OR**: Use `OR` (uppercase) or `|`
+          `router OR firewall` or `router | firewall`
+        - **Phrases**: Use double quotes for exact phrases
+          `"server rack"`
+        - **NOT/Exclusion**: Use `-`, `!`, or `NOT`
+          `cloud -azure` &rarr; finds "cloud" shapes that do **not** mention "azure"
+          `server NOT dell`
+          `!legacy`
+        - **Property search**: Use `property:value` syntax to filter by shape property
+          `manufacturer:Cisco`
+          `category:"network device"`
+
+        **Examples:**
+        - `router OR switch -legacy`
+          (router or switch, but not legacy models)
+        - `"server rack" manufacturer:HPE`
+        - `firewall category:security`
+        - `cloud NOT azure NOT google`
+        - `connector -3d`
+
+        *All terms are case-insensitive. Property search matches substring within property values.*
+
+        ---
         """)
 
+    # --- Persistent User Preferences Sidebar Settings ---
+    prefs = get_user_preferences()
+    with st.sidebar:
+        with st.expander("Settings", expanded=False):
+            # UI Theme
+            ui_theme = st.selectbox(
+                "UI Theme",
+                options=["default", "high_contrast"],
+                index=["default", "high_contrast"].index(st.session_state.get("ui_theme", "default")),
+                key="sidebar_ui_theme"
+            )
+            # Document search toggle
+            document_search = st.checkbox(
+                "Enable Document Search by Default",
+                value=st.session_state.get("search_in_document", prefs.get("document_search")),
+                key="sidebar_document_search"
+            )
+            # FTS toggle
+            fts_toggle = st.checkbox(
+                "Enable FTS (Full Text Search) by Default",
+                value=st.session_state.get("use_fts_search", prefs.get("fts")),
+                key="sidebar_fts"
+            )
+            # Results per page
+            results_per_page = st.number_input(
+                "Results Per Page",
+                min_value=1,
+                max_value=1000,
+                value=st.session_state.get("search_result_limit", prefs.get("results_per_page")),
+                key="sidebar_results_per_page"
+            )
+            # Pagination toggle
+            pagination_enabled = st.checkbox(
+                "Enable Pagination",
+                value=st.session_state.get("pagination_enabled", prefs.get("pagination")),
+                key="sidebar_pagination"
+            )
+            # Visio Auto Refresh
+            visio_auto_refresh = st.checkbox(
+                "Auto-Refresh Visio Connection",
+                value=st.session_state.get("visio_auto_refresh", prefs.get("visio_auto_refresh")),
+                key="sidebar_visio_auto_refresh"
+            )
+
+            updated = False
+            # Handle updating preferences and synchronizing session state
+            if ui_theme != st.session_state.get("ui_theme"):
+                prefs.set("ui_theme", ui_theme)
+                st.session_state.ui_theme = ui_theme
+                updated = True
+            if document_search != st.session_state.get("search_in_document"):
+                prefs.set("document_search", document_search)
+                st.session_state.search_in_document = document_search
+                updated = True
+            if fts_toggle != st.session_state.get("use_fts_search"):
+                prefs.set("fts", fts_toggle)
+                st.session_state.use_fts_search = fts_toggle
+                updated = True
+            if results_per_page != st.session_state.get("search_result_limit"):
+                prefs.set("results_per_page", results_per_page)
+                st.session_state.search_result_limit = results_per_page
+                updated = True
+            if pagination_enabled != st.session_state.get("pagination_enabled"):
+                prefs.set("pagination", pagination_enabled)
+                st.session_state.pagination_enabled = pagination_enabled
+                updated = True
+            if visio_auto_refresh != st.session_state.get("visio_auto_refresh"):
+                prefs.set("visio_auto_refresh", visio_auto_refresh)
+                st.session_state.visio_auto_refresh = visio_auto_refresh
+                updated = True
+
+            if updated:
+                prefs.save()
+                st.success("Preferences updated and saved.", icon="✅")
+
+            # Reset to defaults button: wipes prefs, resets session state, reruns app
+            if st.button("Reset to defaults"):
+                prefs.reset()
+                for k, v in UserPreferences.defaults().items():
+                    # Map preference keys to session state keys
+                    keymap = {
+                        "document_search": "search_in_document",
+                        "fts": "use_fts_search",
+                        "results_per_page": "search_result_limit",
+                        "pagination": "pagination_enabled",
+                        "ui_theme": "ui_theme",
+                        "visio_auto_refresh": "visio_auto_refresh"
+                    }
+                    session_key = keymap[k]
+                    st.session_state[session_key] = v
+                st.success("Preferences reset to defaults. Reloading...", icon="🔄")
+                st.experimental_rerun()
+
+# --- Preview Cache Management Sidebar ---
+        cache = PreviewCache()
+        with st.expander("Preview Cache", expanded=False):
+            stats = cache.cache_stats()
+            st.markdown(f"**Cache Files:** {stats['files']}  \n**Total Size:** {stats['total_bytes'] / 1024:.1f} KB")
+            if st.button("Clear Preview Cache"):
+                removed = cache.clear_cache()
+                st.success(f"Cleared {removed} cached previews.", icon="🗑️")
     # Determine the active directory
     directory_to_use = None
     directory_source = "unknown"
@@ -458,16 +727,26 @@ def main(selected_directory=None):
             # Search bar with buttons - Primary action at the top
             search_row = st.columns([5, 2, 1, 1])
             with search_row[0]:
-                # Use the new key and on_change callback, value from current_search_term
-                search_input = st.text_input("Search for shapes",
-                              key="explorer_search_input_widget",
-                              value=st.session_state.get('current_search_term', ''),
-                              on_change=update_search_term,
-                              label_visibility="collapsed")
-                # Handle Enter key press in the search input
+                # Debounced search integration
+                if "debouncer" not in st.session_state:
+                    st.session_state.debouncer = DebounceSearch(perform_search, delay=0.5)
+                debouncer = st.session_state.debouncer
+
+                def debounced_update_search_term():
+                    st.session_state.current_search_term = st.session_state.explorer_search_input_widget
+                    debouncer.call()
+
+                search_input = st.text_input(
+                    "Search for shapes",
+                    key="explorer_search_input_widget",
+                    value=st.session_state.get('current_search_term', ''),
+                    on_change=debounced_update_search_term,
+                    label_visibility="collapsed"
+                )
+                # Handle Enter key press in the search input (immediate search)
                 if search_input and search_input != st.session_state.get('last_search_input', ''):
                     st.session_state['last_search_input'] = search_input
-                    # Only trigger search if the input has changed
+                    debouncer.cancel()
                     perform_search()
             with search_row[1]:
                 # This button triggers the search
@@ -532,15 +811,18 @@ def main(selected_directory=None):
                             elif not visio_has_docs:
                                 search_doc_tooltip = "Open a document in Visio first to enable this option"
 
-                        search_in_doc = st.checkbox("Search in Current Document",
+                        # Toggle: include shapes from active Visio document
+                        st.session_state.search_in_document = st.checkbox(
+                            "Include Visio Document Shapes",
                             value=st.session_state.search_in_document,
-                            key="search_in_document",
-                            help=search_doc_tooltip,
-                            disabled=search_doc_disabled)
+                            key="search_in_document", # i18n key: search_in_document
+                            help="If enabled, searches both the stencil directory and the currently open Visio document for shapes. " + search_doc_tooltip,
+                            disabled=search_doc_disabled
+                        )
 
                         # Update session state and trigger search if changed
-                        if search_in_doc != st.session_state.get('search_in_document_last_state', False):
-                            st.session_state.search_in_document_last_state = search_in_doc
+                        if st.session_state.search_in_document != st.session_state.get('search_in_document_last_state', False):
+                            st.session_state.search_in_document_last_state = st.session_state.search_in_document
                             # Trigger a new search if there's an active search term
                             if st.session_state.get('current_search_term', ''):
                                 perform_search()
@@ -827,6 +1109,12 @@ def main(selected_directory=None):
                 inject_spacer(20)
 
         # Display search results - Remains outside the form
+        # Phase 1 addition: st.info banner if search_in_document is OFF, show only once per session
+        if not st.session_state.get("search_in_document", False):
+            if not st.session_state.get("info_banner_shown", False):
+                st.info("Document search is currently OFF. Only shapes from the stencil directory will appear below. Enable 'Include Visio Document Shapes' in Options to search the open Visio document.")
+                st.session_state.info_banner_shown = True
+
         if st.session_state.search_results:
             with st.container(border=True):
                 st.write(f"### Results ({len(st.session_state.search_results)} shapes found)")
@@ -877,122 +1165,53 @@ def main(selected_directory=None):
                         ])
 
                 # Show the results with improved styling
-                for idx, row in df.iterrows():
-                    with st.container():
-                        # Check if this is a document shape (from current document search)
-                        is_document_shape = False
-                        original_result = st.session_state.search_results[idx]
-                        if 'is_document_shape' in original_result and original_result['is_document_shape']:
-                            is_document_shape = True
-                            shape_id = original_result.get('shape_id')
-                            page_index = original_result.get('page_index')
+                # ---- Phase 1: Grouping and badges with st.tabs ----
+                # Group by result_source
+                results = st.session_state.search_results
+                stencil_results = [r for r in results if r.get("result_source") == "stencil_directory"]
+                doc_results = [r for r in results if r.get("result_source") == "visio_document"]
+                has_both_sources = len(stencil_results) > 0 and len(doc_results) > 0
 
-                        # Use consistent column layout for all shapes
-                        # Adjust column widths based on screen size
-                        browser_width = st.session_state.get('browser_width', 1200)
-                        if browser_width < 768:  # Mobile
-                            # Checkbox, Shape/Stencil, Action1
-                            res_col_cb, res_col1, res_col2 = st.columns([1, 4, 1])
-                            res_col3 = res_col2  # Use same column for both actions
-                        else:  # Tablet and Desktop
-                            # Checkbox, Shape/Stencil, Action1, Action2
-                            res_col_cb, res_col1, res_col2, res_col3 = st.columns([1, 5, 1, 1])
-
-                        # --- Checkbox Column ---
-                        with res_col_cb:
-                            # Need a unique ID for each shape row for the selection state
-                            # Combine path and name for stencils, use shape_id for doc shapes
+                def render_results_group(results_group):
+                    for idx, result in enumerate(results_group):
+                        with st.container():
+                            is_document_shape = result.get("result_source") == "visio_document"
+                            badge_html = ""
                             if is_document_shape:
-                                shape_unique_id = f"doc_{shape_id}"
+                                badge_html = '<span class="badge-source badge-document">Document</span>'
                             else:
-                                shape_unique_id = f"stencil_{row['Path']}_{row['Shape']}"
+                                badge_html = '<span class="badge-source badge-stencil">Stencil</span>'
 
-                            # Get the full data for this shape to store on selection
-                            full_shape_data = original_result
+                            # Standard fields
+                            shape = result.get("shape_name") or result.get("shape", "N/A")
+                            stencil = result.get("stencil_name", "N/A")
+                            path = result.get("stencil_path", "N/A")
 
-                            # Render the checkbox
-                            st.checkbox("", # No visible label
-                                        key=f"select_batch_{shape_unique_id}",
-                                        value=(shape_unique_id in st.session_state.selected_shapes_for_batch),
-                                        on_change=handle_batch_selection_change,
-                                        args=(shape_unique_id, full_shape_data),
-                                        label_visibility="collapsed"
-                                        )
+                            # Example display: [badge] Shape name (Stencil)
+                            st.markdown(
+                                f"{badge_html} **{shape}**  <span style='color: #888'>({stencil})</span>",
+                                unsafe_allow_html=True,
+                            )
+                            # Optionally show more shape info or actions here
+                            # ...
 
-                        with res_col1:
-                            # Use the original_result we already have
-                            shape_name = row['Shape']
+                if has_both_sources:
+                    tab_labels = ["All", "Stencil", "Document"]
+                    tabs = st.tabs(tab_labels)
+                    # All
+                    with tabs[0]:
+                        render_results_group(results)
+                    # Stencil only
+                    with tabs[1]:
+                        render_results_group(stencil_results)
+                    # Document only
+                    with tabs[2]:
+                        render_results_group(doc_results)
+                else:
+                    render_results_group(results)
+                # ---- End Phase 1 grouping and badges ----
 
-                            # Check if we have highlight information
-                            if 'highlight_start' in original_result and original_result['highlight_start'] >= 0:
-                                # Create highlighted text
-                                start = original_result['highlight_start']
-                                end = original_result['highlight_end']
-                                highlighted_name = (
-                                    f"{shape_name[:start]}"
-                                    f"<span style='background-color: #ffff00;'>{shape_name[start:end]}</span>"
-                                    f"{shape_name[end:]}"
-                                )
-                                st.markdown(f"**{highlighted_name}**", unsafe_allow_html=True)
-                            else:
-                                # No highlight information, just show the name
-                                st.markdown(f"**{shape_name}**")
 
-                            st.caption(f"{row['Stencil']}")
-
-                            # For document shapes, show a different icon/indicator
-                            if is_document_shape:
-                                st.caption("📄 Shape in current document")
-                            else:
-                                st.caption(f"{row['Path']}")
-
-                        with res_col2:
-                            if is_document_shape:
-                                # For document shapes, show a select button instead of preview
-                                if st.button("🔍", key=f"select_{idx}", help="Select this shape in Visio"):
-                                    # Get the document index
-                                    doc_index = st.session_state.selected_doc_index
-
-                                    # Select the shape in Visio
-                                    success = visio.select_shape(doc_index, page_index, shape_id)
-                                    if success:
-                                        st.success(f"Selected shape in Visio")
-                                    else:
-                                        st.error("Failed to select shape")
-                            else:
-                                # For stencil shapes, show the preview button
-                                if st.button("👁️", key=f"preview_{idx}", help="Preview shape"):
-                                    # Get the original result with all metadata
-                                    original_result = st.session_state.search_results[idx]
-
-                                    # Set the shape for preview with metadata if available
-                                    preview_data = {
-                                        "name": row['Shape'],
-                                        "stencil_name": row['Stencil'],
-                                        "stencil_path": row['Path'],
-                                        "width": original_result.get("width", 0),
-                                        "height": original_result.get("height", 0),
-                                        "geometry": original_result.get("geometry", []),
-                                        "properties": original_result.get("properties", {})
-                                    }
-                                    toggle_shape_preview(preview_data)
-
-                        with res_col3:
-                            # Add to collection button (for both types)
-                            if st.button("➕", key=f"add_{idx}", help="Add to collection"):
-                                add_to_collection(row['Shape'], row['Stencil'], row['Path'])
-
-                # Export options
-                st.divider()
-                st.caption("Export Results")
-                export_col1, export_col2, export_col3 = st.columns(3)
-
-                with export_col1:
-                    st.markdown(generate_export_link(df, 'csv'), unsafe_allow_html=True)
-                with export_col2:
-                    st.markdown(generate_export_link(df, 'excel'), unsafe_allow_html=True)
-                with export_col3:
-                    st.markdown(generate_export_link(df, 'txt'), unsafe_allow_html=True)
         elif st.session_state.current_search_term and not st.session_state.search_results:
             st.info("No shapes found matching your search criteria.")
 
@@ -1181,11 +1400,23 @@ def main(selected_directory=None):
                 """, unsafe_allow_html=True)
 
                 # Get shape preview with metadata if available
-                preview = get_shape_preview(
-                    shape_data['stencil_path'],
-                    shape_data['name'],
-                    shape_data=shape_data if 'geometry' in shape_data else None
-                )
+                # --- Use PreviewCache for shape preview performance ---
+                cache = st.session_state.get("preview_cache_instance")
+                if cache is None:
+                    cache = PreviewCache()
+                    st.session_state.preview_cache_instance = cache
+
+                preview_key = f"{shape_data['stencil_path']}::{shape_data['name']}"
+
+                preview = cache.get_cached_preview(preview_key)
+                if preview is None:
+                    preview = get_shape_preview(
+                        shape_data['stencil_path'],
+                        shape_data['name'],
+                        shape_data=shape_data if 'geometry' in shape_data else None
+                    )
+                    if preview:
+                        cache.save_preview(preview_key, preview)
                 if preview:
                     st.image(preview, use_container_width=True, caption=shape_data['name'])
 

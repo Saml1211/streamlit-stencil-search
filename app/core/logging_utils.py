@@ -84,6 +84,38 @@ def setup_logger(name, level="info", log_to_file=True, log_dir="logs",
     
     return logger
 
+class MemoryStreamHandler(logging.Handler):
+    """
+    Logging handler that retains the last N log records in memory for diagnostics/UI.
+    Thread-safe, FIFO buffer.
+    """
+    def __init__(self, capacity=100, fmt=DEFAULT_LOG_FORMAT):
+        super().__init__()
+        self.capacity = capacity
+        self.buffer = []
+        self.formatter = logging.Formatter(fmt)
+        self.lock = logging.Lock()
+
+    def emit(self, record):
+        with self.lock:
+            msg = self.format(record)
+            self.buffer.append(msg)
+            if len(self.buffer) > self.capacity:
+                self.buffer = self.buffer[-self.capacity:]
+
+    def get_latest_logs(self):
+        with self.lock:
+            return list(self.buffer)
+
+    def clear(self):
+        with self.lock:
+            self.buffer.clear()
+
+    def set_capacity(self, capacity):
+        with self.lock:
+            self.capacity = capacity
+            if len(self.buffer) > self.capacity:
+                self.buffer = self.buffer[-self.capacity:]
 def get_logger(name, level=None):
     """
     Get a logger with the specified name

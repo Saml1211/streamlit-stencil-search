@@ -48,56 +48,80 @@ class StencilDatabase:
 
     # Helper for schema creation, called by _init_db and _recreate_tables
     def _init_db_schema(self, conn):
-         # Stencils Table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS stencils (
-                    path TEXT PRIMARY KEY, name TEXT NOT NULL, extension TEXT NOT NULL,
-                    shape_count INTEGER NOT NULL, file_size INTEGER,
-                    last_scan TIMESTAMP NOT NULL, last_modified TIMESTAMP NOT NULL
-                )""")
-            # Shapes Table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS shapes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, stencil_path TEXT NOT NULL,
-                    name TEXT NOT NULL, width REAL DEFAULT 0, height REAL DEFAULT 0,
-                    geometry TEXT, properties TEXT,
-                    FOREIGN KEY (stencil_path) REFERENCES stencils(path) ON DELETE CASCADE
-                )""")
-            # FTS Table
-            conn.execute("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS shapes_fts USING fts5(
-                    id, name, stencil_path, content='shapes', content_rowid='id',
-                    tokenize='porter unicode61'
-                )""")
-            # FTS Triggers
-            conn.execute("""CREATE TRIGGER IF NOT EXISTS shapes_ai AFTER INSERT ON shapes BEGIN
-                            INSERT INTO shapes_fts(rowid, name, stencil_path) VALUES (new.id, new.name, new.stencil_path); END""")
-            conn.execute("""CREATE TRIGGER IF NOT EXISTS shapes_ad AFTER DELETE ON shapes BEGIN
-                            INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path) VALUES ('delete', old.id, old.name, old.stencil_path); END""")
-            conn.execute("""CREATE TRIGGER IF NOT EXISTS shapes_au AFTER UPDATE ON shapes BEGIN
-                            INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path) VALUES ('delete', old.id, old.name, old.stencil_path);
-                            INSERT INTO shapes_fts(rowid, name, stencil_path) VALUES (new.id, new.name, new.stencil_path); END""")
-            # Indexes
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_path ON stencils(path)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_shapes_stencil_path ON shapes(stencil_path)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_shapes_name ON shapes(name)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_shapes_name_stencil_path ON shapes(name, stencil_path)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_last_modified ON stencils(last_modified)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_file_size ON stencils(file_size)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_shape_count ON stencils(shape_count)")
-            # Preset Directories Table
-            conn.execute("""CREATE TABLE IF NOT EXISTS preset_directories (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
-                            is_active BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP )""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_preset_directories_path ON preset_directories(path)")
-            # Saved Searches Table
-            conn.execute("""CREATE TABLE IF NOT EXISTS saved_searches (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, search_term TEXT,
-                            filters TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP )""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_saved_searches_name ON saved_searches(name)")
-            # Favorites Table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS favorites (
+        """
+        Initialize or migrate the database schema, including FTS index.
+        Adds retry logic for FTS initialization with detailed logging and graceful fallback.
+        """
+        import time
+        import logging
+        import traceback
+
+        self.fts_available = True  # Assume FTS is available unless proven otherwise
+        max_retries = 3
+        logger = logging.getLogger("db")
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Stencils Table
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS stencils (
+                        path TEXT PRIMARY KEY, name TEXT NOT NULL, extension TEXT NOT NULL,
+                        shape_count INTEGER NOT NULL, file_size INTEGER,
+                        last_scan TIMESTAMP NOT NULL, last_modified TIMESTAMP NOT NULL
+                    )""")
+                # Shapes Table
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS shapes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT, stencil_path TEXT NOT NULL,
+                        name TEXT NOT NULL, width REAL DEFAULT 0, height REAL DEFAULT 0,
+                        geometry TEXT, properties TEXT,
+                        FOREIGN KEY (stencil_path) REFERENCES stencils(path) ON DELETE CASCADE
+                    )""")
+                # FTS Table (may fail if extension unavailable or DB locked)
+                conn.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS shapes_fts USING fts5(
+                        id, name, stencil_path, content='shapes', content_rowid='id',
+                        tokenize='porter unicode61'
+                    )""")
+                # FTS Triggers
+                conn.execute("""CREATE TRIGGER IF NOT EXISTS shapes_ai AFTER INSERT ON shapes BEGIN
+                                INSERT INTO shapes_fts(rowid, name, stencil_path) VALUES (new.id, new.name, new.stencil_path); END""")
+                conn.execute("""CREATE TRIGGER IF NOT EXISTS shapes_ad AFTER DELETE ON shapes BEGIN
+                                INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path) VALUES ('delete', old.id, old.name, old.stencil_path); END""")
+                conn.execute("""CREATE TRIGGER IF NOT EXISTS shapes_au AFTER UPDATE ON shapes BEGIN
+                                INSERT INTO shapes_fts(shapes_fts, rowid, name, stencil_path) VALUES ('delete', old.id, old.name, old.stencil_path);
+                                INSERT INTO shapes_fts(rowid, name, stencil_path) VALUES (new.id, new.name, new.stencil_path); END""")
+                # Indexes
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_path ON stencils(path)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_shapes_stencil_path ON shapes(stencil_path)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_shapes_name ON shapes(name)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_shapes_name_stencil_path ON shapes(name, stencil_path)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_last_modified ON stencils(last_modified)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_file_size ON stencils(file_size)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_stencils_shape_count ON stencils(shape_count)")
+                # Preset Directories Table
+                conn.execute("""CREATE TABLE IF NOT EXISTS preset_directories (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
+                                is_active BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP )""")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_preset_directories_path ON preset_directories(path)")
+                # Saved Searches Table
+                conn.execute("""CREATE TABLE IF NOT EXISTS saved_searches (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, search_term TEXT,
+                                filters TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP )""")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_saved_searches_name ON saved_searches(name)")
+                # Favorites Table
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS favorites (
+                """)
+                # Success, break out of retry loop
+                break
+            except Exception as e:
+                logger.error(f"Attempt {attempt}: Error initializing FTS index or tables: {e}")
+                traceback.print_exc()
+                time.sleep(0.5)
+                if attempt == max_retries:
+                    self.fts_available = False
+                    logger.error("FTS index initialization failed after multiple attempts. Full traceback above. Falling back to standard search.")
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     item_type TEXT NOT NULL CHECK(item_type IN ('stencil', 'shape')),
                     stencil_path TEXT NOT NULL,
