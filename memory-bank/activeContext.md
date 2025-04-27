@@ -1,61 +1,43 @@
-# Active Context: Visio Bridge Integration Suite (Updated: 2025-04-24)
+# Active Context: Visio Bridge Integration Suite (Updated: 2025-04-28)
 
 ## Current Work Focus
-- Planning Next.js frontend feature parity with the Streamlit application.
-- Debugging the core Streamlit application (`streamlit run app.py`).
-- Specifically addressing `IndentationError`s introduced during previous edits and the original `StreamlitDuplicateElementKey` error on the "Visio Control" page.
+- Major UI/UX critical enhancements completed for Streamlit-based dashboard.
+- Focused on persistent user preferences and interactive sidebar integration in Streamlit.
+- Ensured memory bank and progress documentation accurately track feature status and workflows.
 
 ## Recent Changes
 
-*   **Next.js Feature Parity Plan**: Created detailed implementation plan for achieving feature parity between Next.js and Streamlit dashboards (`docs/Nextjs-Feature-Parity-Plan.md`).
-*   Fixed `IndentationError` in `app/core/components.py`.
-*   Fixed `IndentationError` in `modules/Visio_Stencil_Explorer.py`.
-*   **Phase 1 Completed (`task-15`):** Visio COM logic for text/image import.
-*   **Phase 2 Completed (`task-16`):** FastAPI CORS origins updated.
-*   **Phase 3 Completed (`task-17`):** Chrome Extension state persistence via `chrome.storage.local`.
-*   **Phase 4 Completed (`task-18`):** MCP server configuration refinement (command-line args).
-*   **Phase 5 Setup (`task-19`):** 
-    *   Successfully started background servers.
-    *   Identified and integrated the **MCP Inspector** tool.
-    *   Documented Inspector usage in `memory-bank/techContext.md` and `visio_bridge/README.md`.
-    *   Created `start_inspector.bat` for easier launch.
+* **Critical Enhancements Plan (Phase 2/UX):**
+  - Implemented a full interactive sidebar (see `modules/Visio_Stencil_Explorer.py`) allowing users to set, persist, and reset preferences such as document search, FTS, results/page, pagination, UI theme, and Visio auto-refresh directly in the Streamlit UI.
+  - Preferences are persisted using the robust `UserPreferences` class in `app/core/preferences.py`, with atomic JSON file storage and fallback to defaults on error.
+  - Sidebar UI applies changes live, preferences are auto-saved, and reset to defaults is available.
+  - Addressed legacy errors with FTS, event loop shutdowns, and improved cross-platform behavior.
+
+* **Streamlit User Preferences (2025-04-28):**
+  - All user options for search and UI are now easily discoverable and adjustable at runtime by all users.
+  - Old hardcoded session state defaults and manual JSON edits are no longer necessary.
+
+* **Bug Fixes:**
+  - Resolved SyntaxError in `app/core/db.py` and ensured robust database initialization for cache and FTS.
+  - Fixed app startup and shutdown error propagation for a smoother development cycle.
 
 ## Active Decisions
 
-*   Prioritizing Next.js feature parity planning while also addressing runtime errors in the Streamlit application.
-*   Utilizing MCP Task Manager for planning and tracking implementation of Next.js feature parity.
-*   **MCP Server Config:** Command-line arguments remain preferred.
-*   **Task Order:** Continuing with dependency-based task order.
-*   **Phase 5 Verification:** Using **MCP Inspector** (UI and CLI) as the primary method for verifying MCP server tool functionality, replacing reliance on potentially unreliable direct tool calls or separate manual clients. (Currently paused for Streamlit debugging).
+* Prioritize user-facing UX and persistence improvements in Streamlit dashboard before full Next.js feature parity push.
+* Continue to document all major architectural and workflow changes in the memory bank as the project evolves.
 
 ## Current Tasks
 
-*   Verifying the fixes for the `IndentationError`s.
-*   Investigating the root cause of the `StreamlitDuplicateElementKey` error, likely related to duplicate widget keys in the Visio integration section of the sidebar rendered by `render_shared_sidebar` in `app/core/components.py`.
+* Confirm no regressions on mainline Streamlit dashboard workflow.
+* Verify persistence and reset logic for preferences file and sidebar UI in typical session scenarios.
 
 ## Next Steps (High-Level)
-
-1.  **Next.js Implementation**: Begin implementing the Next.js feature parity plan following the phased approach:
-    - **Phase 1**: Core Features (excluding Shape Preview)
-    - **Phase 2**: Additional Tools & Health Monitor
-    - **Phase 3**: Visio Integration, Advanced Features, and Shape Preview
-    - **Phase 4**: Refinement and Testing
-2.  **Run Streamlit App**: Execute `streamlit run app.py` to confirm indentation fixes and observe if the `StreamlitDuplicateElementKey` error persists.
-3.  **Fix Duplicate Key Error**: If the error persists, identify and correct the duplicate `key` assignments in `app/core/components.py` or related modules.
-4.  **Resume MCP Inspector Testing (`task-19`)**: Once the Streamlit app is stable, resume testing the `visio-bridge` tools using the Inspector.
-5.  **Approve Phase 5 (`task-19`)**: User to approve after successful verification using the Inspector.
-6.  **Execute Phase 6 (`task-20`)**: Begin packaging the `local-api-server` using PyInstaller.
-7.  Complete remaining tasks from the original plan (`req-4`).
+1. Complete remaining critical enhancements as scoped.
+2. Merge these improvements into the main development branch.
+3. Resume Next.js feature parity work, ensuring UX consistency and parity with Streamlit, especially around user preference management.
 
 ## Technical Considerations
 
-*   Need to ensure unique keys are used for all Streamlit widgets, especially when components are rendered conditionally or reused (e.g., `render_shared_sidebar`). Check usage of `key_prefix`.
-*   The `StreamlitDuplicateElementKey` error often arises when the same key is used for widgets within the same script run, potentially due to reruns or conditional rendering logic.
-*   Reliability of starting background processes via `run_terminal_cmd` confirmed.
-*   **MCP Inspector** provides a more controlled environment for testing MCP interactions, potentially bypassing the `getaddrinfo` issue seen with direct tool calls.
-*   PyInstaller packaging for `pywin32` (`task-20`) still requires careful attention.
-*   Ensure Node.js/npm prerequisites for `MCP Inspector` are met in the development environment.
-*   Next.js implementation should use shadcn/ui for UI components to maintain a consistent look and feel.
-*   The Shape Preview feature is technically challenging and has been moved to Phase 3 in the Next.js implementation plan.
-*   Visio integration features are considered essential, not optional, for the Next.js implementation.
-*   Multiple Visio sessions support needs to be implemented in the Next.js version.
+* The new user preferences flow is fully decoupled and safe for further extension.
+* All Streamlit widgets for preferences use unique keys and state logic.
+* Preferences logic is modular and can be migrated to Next.js or other UI layers as needed.

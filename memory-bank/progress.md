@@ -1,4 +1,4 @@
-# Progress: Visio Bridge Integration Suite (Updated: 2025-04-24)
+# Progress: Visio Bridge Integration Suite (Updated: 2025-04-28)
 
 ## Completed Features
 
@@ -23,45 +23,46 @@
 - ✅ **Error Handling & Logging**: Implemented.
 - ✅ **Documentation & Setup**: Included.
 
+### Streamlit Dashboard
+- ✅ **Critical Enhancements Plan (Phases 1–4):** All major user-facing critical enhancements are complete:
+    - Search-mode clarity, source distinction, and badge/tabs UI.
+    - Persistent user preferences: full interactive sidebar UI for live setting, atomic save, and reset of preferences (document search, FTS, results/page, pagination, UI theme, Visio auto-refresh).
+    - Enhanced error handling/diagnostics and FTS retry/fallback handling.
+    - Debounced and cached search logic and shape preview performance.
+    - Advanced query parser, property filter search, and UI help/documentation.
+    - All features tested and verified, preference persistence and reset logic confirmed.
+
 ## In Progress
 
 - 🔄 **Next.js Feature Parity Implementation**:
     - Created detailed implementation plan (`docs/Nextjs-Feature-Parity-Plan.md`).
-    - Identified feature gaps between Streamlit and Next.js versions.
-    - Established 4-phase implementation approach.
+    - Feature gap analysis and phased approach established.
     - **Next: Begin implementing Phase 1 core features.**
-- 🔄 **Debugging Streamlit Application**:
-    - Fixed `IndentationError` in `app/core/components.py`.
-    - Fixed `IndentationError` in `modules/Visio_Stencil_Explorer.py`.
-    - **Next: Re-run app to verify fixes and check for `StreamlitDuplicateElementKey` error.**
-- ⏸️ **MCP Server Testing (`task-19`)**: Paused while debugging Streamlit.
-    - MCP Inspector tool identified, integrated, and documented.
-    - Verification via Inspector planned after Streamlit issues resolved.
 
 ## What's Left to Build
 
 ### Next.js Feature Parity Plan
 1. 📋 **Phase 1: Core Features**
-   - Implement UI for setting and managing directory paths for scanning
-   - Add functionality to add shapes to collections from search results
+    - Implement UI for setting and managing directory paths for scanning
+    - Add functionality to add shapes to collections from search results
 
 2. 📋 **Phase 2: Additional Tools & Health Monitor**
-   - Create "Temp File Cleaner" feature
-   - Enhance "System Status" page to become full "Stencil Health Monitor"
-   - Implement export capabilities for search results and reports
+    - Create "Temp File Cleaner" feature
+    - Enhance "System Status" page to become full "Stencil Health Monitor"
+    - Implement export capabilities for search results and reports
 
 3. 📋 **Phase 3: Visio Integration & Advanced Features**
-   - Implement UI for Visio integration features
-   - Implement UI for selecting active Visio session when multiple are open
-   - Implement Advanced Filtering UI
-   - Implement Shape Preview rendering
-   - (Stretch) Implement Remote Visio Connectivity UI
+    - Implement UI for Visio integration features
+    - Implement UI for selecting active Visio session when multiple are open
+    - Implement Advanced Filtering UI
+    - Implement Shape Preview rendering
+    - (Stretch) Implement Remote Visio Connectivity UI
 
 4. 📋 **Phase 4: Refinement and Testing**
-   - Review and refine UI/UX
-   - Ensure responsive design
-   - Comprehensive testing against Streamlit version
-   - Update documentation
+    - Review and refine UI/UX
+    - Ensure responsive design
+    - Comprehensive testing against Streamlit version
+    - Update documentation
 
 ### Original Plan (`req-4`)
 1.  📋 **Complete MCP Server Testing (`task-19`)**: Finish verification using MCP Inspector.
@@ -75,9 +76,8 @@
 ## Known Issues
 
 - **`StreamlitDuplicateElementKey` Error**: Ongoing issue in the "Visio Control" page/sidebar, likely due to duplicate widget keys in `app/core/components.py` (specifically `render_shared_sidebar`). Needs investigation after confirming indentation fixes.
-- **Recent Indentation Errors**: Fixed errors introduced in `app/core/components.py` and `modules/Visio_Stencil_Explorer.py` during previous edits.
 - MCP automated tool calls (`mcp_visio_bridge_check_visio_connection`) have previously failed with `getaddrinfo failed` error; using **MCP Inspector** is the recommended approach for testing/debugging this.
 - PyInstaller packaging for `pywin32` apps needs careful handling (potential issue for Task `task-20`).
 - Manual configuration of MCP client (e.g., Claude Desktop) is required for integration.
-- Shape Preview rendering has been challenging in Streamlit implementation; moved to Phase 3 in Next.js implementation plan due to complexity.
+- Shape Preview rendering continues to be technically challenging in Streamlit; remains a priority for Next.js Phase 3.
 - Next.js implementation will use shadcn/ui for UI components.
