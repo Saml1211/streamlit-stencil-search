@@ -90,6 +90,73 @@ import streamlit as st
 def get_user_preferences():
     return UserPreferences()
 
+def user_preferences_sidebar(prefs):
+    """Render a sidebar UI for setting user preferences."""
+    st.sidebar.markdown("### User Preferences")
+
+    # Document Search Toggle
+    doc_search = st.sidebar.checkbox(
+        "Include Visio Document Shapes",
+        value=prefs.get("document_search"),
+        help="When enabled, search will include shapes from open Visio documents.",
+        key="prefs_doc_search"
+    )
+    prefs.set("document_search", doc_search)
+
+    # FTS Toggle
+    fts = st.sidebar.checkbox(
+        "Enable Full-Text Search (FTS)",
+        value=prefs.get("fts"),
+        help="Use full-text index for faster, smarter search.",
+        key="prefs_fts"
+    )
+    prefs.set("fts", fts)
+
+    # Results Per Page
+    results_per_page = st.sidebar.number_input(
+        "Results per page",
+        min_value=5,
+        max_value=100,
+        value=prefs.get("results_per_page"),
+        step=5,
+        key="prefs_results_per_page"
+    )
+    prefs.set("results_per_page", results_per_page)
+
+    # Pagination
+    pagination = st.sidebar.checkbox(
+        "Enable Pagination",
+        value=prefs.get("pagination"),
+        key="prefs_pagination"
+    )
+    prefs.set("pagination", pagination)
+
+    # UI Theme
+    ui_theme = st.sidebar.selectbox(
+        "UI Theme",
+        options=["default", "high_contrast"],
+        index=0 if prefs.get("ui_theme") == "default" else 1,
+        help="Set interface style for accessibility.",
+        key="prefs_ui_theme"
+    )
+    prefs.set("ui_theme", ui_theme)
+
+    # Visio Auto-Refresh
+    visio_auto_refresh = st.sidebar.checkbox(
+        "Auto-refresh Visio Connection",
+        value=prefs.get("visio_auto_refresh"),
+        help="Automatically refresh the Visio connection.",
+        key="prefs_visio_auto_refresh"
+    )
+    prefs.set("visio_auto_refresh", visio_auto_refresh)
+
+    # Reset to defaults
+    if st.sidebar.button("Reset Preferences to Defaults"):
+        prefs.reset()
+        st.experimental_rerun()
+
+    # Save (persist) preferences
+    prefs.save()
 # Session state is now initialized in app.py
 # No need to initialize session state variables here
 
@@ -130,6 +197,9 @@ def generate_export_link(df, file_type):
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, sheet_name='Search Results', index=False)
         b64 = base64.b64encode(output.getvalue()).decode()
+# --- Render the User Preferences Sidebar at app startup ---
+prefs = get_user_preferences()
+user_preferences_sidebar(prefs)
         href = f'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}'
         download_filename = f'stencil_search_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
     elif file_type == 'txt':

@@ -1,3 +1,4 @@
+
 import sqlite3
 import json
 from datetime import datetime, timedelta
@@ -112,6 +113,14 @@ class StencilDatabase:
                 # Favorites Table
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS favorites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_type TEXT NOT NULL CHECK(item_type IN ('stencil', 'shape')),
+                        stencil_path TEXT NOT NULL,
+                        shape_id INTEGER, -- NULL if item_type is 'stencil'
+                        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (stencil_path) REFERENCES stencils(path) ON DELETE CASCADE,
+                        FOREIGN KEY (shape_id) REFERENCES shapes(id) ON DELETE CASCADE
+                    )
                 """)
                 # Success, break out of retry loop
                 break
@@ -122,14 +131,6 @@ class StencilDatabase:
                 if attempt == max_retries:
                     self.fts_available = False
                     logger.error("FTS index initialization failed after multiple attempts. Full traceback above. Falling back to standard search.")
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    item_type TEXT NOT NULL CHECK(item_type IN ('stencil', 'shape')),
-                    stencil_path TEXT NOT NULL,
-                    shape_id INTEGER, -- NULL if item_type is 'stencil'
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (stencil_path) REFERENCES stencils(path) ON DELETE CASCADE,
-                    FOREIGN KEY (shape_id) REFERENCES shapes(id) ON DELETE CASCADE
-                )""")
             # Create partial unique indexes separately
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_fav_stencil_unique ON favorites(stencil_path) WHERE item_type = 'stencil'")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_fav_shape_unique ON favorites(shape_id) WHERE item_type = 'shape' AND shape_id IS NOT NULL") # Added shape_id IS NOT NULL check
