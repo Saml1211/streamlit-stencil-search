@@ -1,3 +1,8 @@
 fastapi
 uvicorn[standard] # Includes standard dependencies like websockets
 # pywin32 will be added later for COM integration
+pywin32>=302  # Added COM integration dependency
+tqdm>=4.66.0  # Added for file scanning progress
+matplotlib>=3.7.0  # Added for shape preview functionality
+numpy>=1.24.0      # Added for shape preview geometry support
+streamlit>=1.29.0  # Added to support Streamlit imports in components

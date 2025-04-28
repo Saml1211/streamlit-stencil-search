@@ -197,9 +197,6 @@ def generate_export_link(df, file_type):
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, sheet_name='Search Results', index=False)
         b64 = base64.b64encode(output.getvalue()).decode()
-# --- Render the User Preferences Sidebar at app startup ---
-prefs = get_user_preferences()
-user_preferences_sidebar(prefs)
         href = f'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}'
         download_filename = f'stencil_search_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
     elif file_type == 'txt':
@@ -288,29 +285,41 @@ def import_collection_to_visio(doc_index, page_index):
 
 def toggle_favorite_stencil(stencil_path: str):
     """Add or remove a stencil from favorites using the database."""
-    db = StencilDatabase()
-    is_currently_fav = db.is_favorite_stencil(stencil_path)
+    try:
+        db = StencilDatabase()
+        is_currently_fav = db.is_favorite_stencil(stencil_path)
 
-    if is_currently_fav:
-        # Remove from favorites
-        db.remove_favorite_stencil(stencil_path)
-        result = False # No longer a favorite
-    else:
-        # Add to favorites
-        # We might need stencil details (name, shape_count) if we want to store them
-        # directly in favorites table, but current DB schema doesn't store them there.
-        # The add_favorite_stencil method only needs the path.
-        result = db.add_favorite_stencil(stencil_path) # Returns True if added, False if error/already exists
+        if is_currently_fav:
+            # Remove from favorites
+            db.remove_favorite_stencil(stencil_path)
+            result = False # No longer a favorite
+        else:
+            # Add to favorites
+            # We might need stencil details (name, shape_count) if we want to store them
+            # directly in favorites table, but current DB schema doesn't store them there.
+            # The add_favorite_stencil method only needs the path.
+            result = db.add_favorite_stencil(stencil_path) # Returns True if added, False if error/already exists
 
-    db.close()
-    return result # True if added, False if removed or error
+        db.close()
+        return result # True if added, False if removed or error
+    except Exception as e:
+        st.error(f"Error toggling favorite status: {str(e)}")
+        import traceback
+        st.text(traceback.format_exc())
+        return False
 
 def is_favorite_stencil(stencil_path: str) -> bool:
     """Check if a stencil is in favorites using the database."""
-    db = StencilDatabase()
-    is_fav = db.is_favorite_stencil(stencil_path)
-    db.close()
-    return is_fav
+    try:
+        db = StencilDatabase()
+        is_fav = db.is_favorite_stencil(stencil_path)
+        db.close()
+        return is_fav
+    except Exception as e:
+        st.error(f"Error checking favorite status: {str(e)}")
+        import traceback
+        st.text(traceback.format_exc())
+        return False
 
 def toggle_show_favorites():
     """Toggle the favorites view"""
@@ -702,7 +711,12 @@ def main(selected_directory=None):
                 updated = True
 
             if updated:
-                prefs.save()
+                try:
+                    prefs.save()
+                except Exception as e:
+                    st.error(f"Error saving preferences: {str(e)}")
+                    import traceback
+                    st.text(traceback.format_exc())
                 st.success("Preferences updated and saved.", icon="✅")
 
             # Reset to defaults button: wipes prefs, resets session state, reruns app
@@ -740,11 +754,16 @@ def main(selected_directory=None):
             directory_to_use = selected_directory
             directory_source = "passed_from_app"
             # Check if it corresponds to an active preset for informational message
-            db = StencilDatabase()
-            active_preset = db.get_active_directory()
-            db.close()
-            if active_preset and active_preset['path'] == directory_to_use:
-                st.info(f"Using Active Preset Directory: {active_preset['name']} ({directory_to_use})")
+            try:
+                db = StencilDatabase()
+                active_preset = db.get_active_directory()
+                db.close()
+                if active_preset and active_preset['path'] == directory_to_use:
+                    st.info(f"Using Active Preset Directory: {active_preset['name']} ({directory_to_use})")
+            except Exception as e:
+                st.error(f"Error checking active directory preset: {str(e)}")
+                import traceback
+                st.text(traceback.format_exc())
         else:
              # Invalid directory passed from app.py, try session state
              pass # Fall through to session state check

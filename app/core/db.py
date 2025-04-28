@@ -21,6 +21,19 @@ class StencilDatabase:
         print(f"Database path set to: {self.db_path.resolve()}")
         self._init_db()
 
+    def close(self):
+        """Close the database connection safely."""
+        with self._lock:
+            if self._conn:
+                try:
+                    print("Closing database connection...")
+                    self._conn.close()
+                    print("Database connection closed.")
+                except Exception as e:
+                    print(f"Error closing database connection: {e}")
+                finally:
+                    self._conn = None
+
     def _get_conn(self) -> sqlite3.Connection:
         """Get database connection (using check_same_thread=False with external lock)"""
         if not self._conn:

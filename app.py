@@ -8,6 +8,10 @@
 import streamlit as st
 import sys
 import traceback
+import atexit
+import signal
+
+from app.core.db import StencilDatabase
 
 # Set a default page config here that must be the first Streamlit command
 st.set_page_config(
@@ -26,12 +30,11 @@ from app.core.custom_styles import inject_custom_css
 from app.core.logging_utils import setup_logger, get_logger
 from app.core.preferences import UserPreferences
 
-# Create a cached singleton user preferences instance
-@st.cache_resource
+# Create a user preferences instance (no longer cached as resource)
 def get_user_preferences():
     return UserPreferences()
 
-# Set up application logging
+# Set up application logging (only once)
 app_logger = setup_logger(
     name="stencil_explorer",
     level=config.get("app.log_level", "info"),
@@ -39,289 +42,100 @@ app_logger = setup_logger(
     log_dir="logs"
 )
 
-# --- Begin graceful shutdown wrapper for event loop errors ---
-try:
-    # Set up exception handling
-    def handle_exception(exc_type, exc_value, exc_traceback):
-        """Global exception handler to log unhandled exceptions"""
-        if issubclass(exc_type, KeyboardInterrupt):
-            # Don't log keyboard interrupt
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
-
-        app_logger.critical("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
-
-    # Set the exception hook
-    sys.excepthook = handle_exception
-
-    # Log application startup
-    app_logger.info(f"Starting Visio Stencil Explorer v{config.get('app.version', '1.0.0')}")
-
-    # Initialize the database and rebuild the FTS index if needed
-    @st.cache_resource
-    def initialize_database():
-        """Initialize the database and ensure the FTS index is built"""
-        # Print a clear header
-        app_logger.info("Initializing database")
-
-        # Check if database file exists and is not corrupted
-        db_path = config.get("paths.database", "data/stencil_cache.db")
-        try:
-            # Try to open the database and check integrity
-            import sqlite3
-            import os
-
-            # If database doesn't exist, we'll create it normally
-            if not os.path.exists(db_path):
-                app_logger.info(f"Database file {db_path} does not exist, will create new database")
-            else:
-                # Check if database is corrupted
-                try:
-                    test_conn = sqlite3.connect(db_path)
-                    integrity_result = test_conn.execute("PRAGMA integrity_check").fetchone()[0]
-                    test_conn.close()
-
-                    if integrity_result != "ok":
-                        app_logger.error(f"Database integrity check failed: {integrity_result}")
-                        # Backup and recreate database
-                        backup_and_recreate_db(db_path)
-                except sqlite3.OperationalError as e:
-                    if "database disk image is malformed" in str(e):
-                        app_logger.error(f"Database corruption detected: {e}")
-                        # Backup and recreate database
-                        backup_and_recreate_db(db_path)
-                    else:
-                        app_logger.error(f"SQLite error: {e}")
-                except Exception as e:
-                    app_logger.error(f"Error checking database integrity: {e}")
-        except Exception as e:
-            app_logger.error(f"Error during database pre-check: {e}")
-
-        db = StencilDatabase()
-        try:
-            # The integrity check happens automatically during initialization
-
-            # Attempt to rebuild the FTS index - this is a no-op if already built
-            app_logger.debug("Rebuilding FTS index if needed")
-            rebuild_result = db.rebuild_fts_index()
-            if rebuild_result:
-                app_logger.info("FTS index initialized successfully")
-            else:
-                app_logger.warning("FTS index initialization failed - will use standard search")
-
-            # Run a quick count to verify database is working
-            try:
-                conn = db._get_conn()
-                stencil_count = conn.execute("SELECT COUNT(*) FROM stencils").fetchone()[0]
-                shape_count = conn.execute("SELECT COUNT(*) FROM shapes").fetchone()[0]
-                app_logger.info(f"Database contains {stencil_count} stencils and {shape_count} shapes")
-            except Exception as count_error:
-                app_logger.error(f"Error counting database records: {count_error}")
-        except Exception as e:
-            app_logger.error(f"Error initializing database: {e}")
-            app_logger.error(traceback.format_exc())
-        finally:
-            db.close()
-
-        app_logger.info("Database initialization complete")
-        return True
-
-    def backup_and_recreate_db(db_path):
-        """Backup and recreate a corrupted database"""
-        import os
-        import shutil
-        from datetime import datetime
-
-        try:
-            # Create a backup of the corrupt database
-            backup_path = f"{db_path}.backup.{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            if os.path.exists(db_path):
-                shutil.copy2(db_path, backup_path)
-                app_logger.info(f"Created database backup at {backup_path}")
-
-                # Remove the corrupted database
-                os.remove(db_path)
-                app_logger.info(f"Removed corrupted database file {db_path}")
-
-                # A new database will be created automatically when StencilDatabase is initialized
-                app_logger.info("Database will be recreated on next access")
-                return True
-        except Exception as e:
-            app_logger.error(f"Error backing up database: {e}")
-            return False
-
-    # Initialize the database at startup
-    _ = initialize_database()
-
-    # Page config is already set at the top of the file
-    # No need to set it again here
-
-    # Initialize ALL session state values needed by all pages BEFORE any UI is created
-    def initialize_session_state():
-        """Initialize all session state variables in a single function."""
-        prefs = get_user_preferences()
-
-except RuntimeError as e:
-    # Gracefully handle shutdown event loop error without traceback
-    if "Event loop is closed" in str(e):
-        app_logger.info("Event loop closed during shutdown; exception suppressed.")
-    else:
-        raise
-
+# Initialize session state with defaults mapped from user preferences
+def initialize_session_state():
+    """Initialize all session state variables in a single function."""
+    prefs = get_user_preferences() # Get prefs instance
     # Directory and UI state
-    if 'last_dir' not in st.session_state:
-        # Set default directory from user preferences, if available (not persisted in preferences)
-        default_dir = config.get("user_preferences.default_startup_directory", config.get("paths.stencil_directory", "./test_data"))
-        st.session_state.last_dir = default_dir
-    if 'show_filters' not in st.session_state:
-        st.session_state.show_filters = False
-    if 'browser_width' not in st.session_state:
-        st.session_state.browser_width = 1200
-    if 'force_rerun' not in st.session_state:
-        st.session_state.force_rerun = False
-    if 'initial_load_complete' not in st.session_state:
-        st.session_state.initial_load_complete = False
+    st.session_state.setdefault(
+        'last_dir', 
+        config.get("user_preferences.default_startup_directory", config.get("paths.stencil_directory", "./test_data"))
+    )
+    st.session_state.setdefault('show_filters', False)
+    st.session_state.setdefault('browser_width', 1200)
+    st.session_state.setdefault('force_rerun', False)
+    st.session_state.setdefault('initial_load_complete', False)
 
     # Persistent user preferences mapped to session state
-    if 'search_in_document' not in st.session_state:
-        st.session_state.search_in_document = prefs.get("document_search")
-    if 'use_fts_search' not in st.session_state:
-        st.session_state.use_fts_search = prefs.get("fts")
-    if 'search_result_limit' not in st.session_state:
-        st.session_state.search_result_limit = prefs.get("results_per_page")
-    if 'pagination_enabled' not in st.session_state:
-        st.session_state.pagination_enabled = prefs.get("pagination")
-    if 'ui_theme' not in st.session_state:
-        st.session_state.ui_theme = prefs.get("ui_theme")
-    if 'visio_auto_refresh' not in st.session_state:
-        st.session_state.visio_auto_refresh = prefs.get("visio_auto_refresh")
+    st.session_state.setdefault('search_in_document', prefs.get("document_search"))
+    st.session_state.setdefault('use_fts_search', prefs.get("fts")) # Renamed key for clarity
+    st.session_state.setdefault('search_result_limit', prefs.get("results_per_page")) # Renamed key
+    st.session_state.setdefault('pagination_enabled', prefs.get("pagination")) # Renamed key
+    st.session_state.setdefault('ui_theme', prefs.get("ui_theme"))
+    st.session_state.setdefault('visio_auto_refresh', prefs.get("visio_auto_refresh"))
 
     # Any other legacy/config-driven session state
-    if 'show_metadata_columns' not in st.session_state:
-        st.session_state.show_metadata_columns = config.get("user_preferences.show_metadata_columns", False)
-    if 'current_search_term' not in st.session_state:
-        st.session_state.current_search_term = ""
-    if 'last_search_input' not in st.session_state:
-        st.session_state.last_search_input = ""
-    if 'search_history' not in st.session_state:
-        st.session_state.search_history = []
-    if 'search_results' not in st.session_state:
-        st.session_state.search_results = []
+    st.session_state.setdefault('show_metadata_columns', config.get("user_preferences.show_metadata_columns", False))
+    st.session_state.setdefault('current_search_term', "")
+    st.session_state.setdefault('last_search_input', "")
+    st.session_state.setdefault('search_history', [])
+    st.session_state.setdefault('search_results', [])
 
     # Visio integration
-    if 'visio_connected' not in st.session_state:
-        st.session_state.visio_connected = False
-    if 'visio_documents' not in st.session_state:
-        st.session_state.visio_documents = []
-    if 'selected_doc_index' not in st.session_state:
-        st.session_state.selected_doc_index = 1
-    if 'selected_page_index' not in st.session_state:
-        st.session_state.selected_page_index = 1
-    if 'visio_connection_type' not in st.session_state:
-        st.session_state.visio_connection_type = "local"
-    if 'visio_server_name' not in st.session_state:
-        st.session_state.visio_server_name = ""
+    st.session_state.setdefault('visio_connected', False)
+    st.session_state.setdefault('visio_documents', [])
+    st.session_state.setdefault('selected_doc_index', 1)
+    st.session_state.setdefault('selected_page_index', 1)
+    st.session_state.setdefault('visio_connection_type', "local")
+    st.session_state.setdefault('visio_server_name', "")
 
     # Stencil scanning state
-    if 'stencils' not in st.session_state:
-        st.session_state.stencils = []
-    if 'last_scan_dir' not in st.session_state:
-        st.session_state.last_scan_dir = ""
-    if 'background_scan_running' not in st.session_state:
-        st.session_state.background_scan_running = False
-    if 'last_background_scan' not in st.session_state:
-        st.session_state.last_background_scan = None
-    if 'scan_progress' not in st.session_state:
-        st.session_state.scan_progress = 0
-    if 'scan_status' not in st.session_state:
-        st.session_state.scan_status = ""
-    if 'preview_shape' not in st.session_state:
-        st.session_state.preview_shape = None
+    st.session_state.setdefault('stencils', [])
+    st.session_state.setdefault('last_scan_dir', "")
+    st.session_state.setdefault('background_scan_running', False)
+    st.session_state.setdefault('last_background_scan', None)
+    st.session_state.setdefault('scan_progress', 0)
+    st.session_state.setdefault('scan_status', "")
+    st.session_state.setdefault('preview_shape', None)
 
     # Shape collection
-    if 'shape_collection' not in st.session_state:
-        st.session_state.shape_collection = []
-    if 'favorite_stencils' not in st.session_state:
-        st.session_state.favorite_stencils = []
-    if 'show_favorites' not in st.session_state:
-        st.session_state.show_favorites = False
+    st.session_state.setdefault('shape_collection', [])
+    st.session_state.setdefault('favorite_stencils', [])
+    st.session_state.setdefault('show_favorites', False)
 
     # Filter state
-    if 'filter_date_start' not in st.session_state:
-        st.session_state.filter_date_start = None
-    if 'filter_date_end' not in st.session_state:
-        st.session_state.filter_date_end = None
-    if 'filter_min_size' not in st.session_state:
-        st.session_state.filter_min_size = 0
-    if 'filter_max_size' not in st.session_state:
-        st.session_state.filter_max_size = 50 * 1024 * 1024  # 50 MB
-    if 'filter_min_shapes' not in st.session_state:
-        st.session_state.filter_min_shapes = 0
-    if 'filter_max_shapes' not in st.session_state:
-        st.session_state.filter_max_shapes = 500
-    if 'filter_min_width' not in st.session_state:
-        st.session_state.filter_min_width = 0
-    if 'filter_max_width' not in st.session_state:
-        st.session_state.filter_max_width = 0  # 0 means no limit
-    if 'filter_min_height' not in st.session_state:
-        st.session_state.filter_min_height = 0
-    if 'filter_max_height' not in st.session_state:
-        st.session_state.filter_max_height = 0  # 0 means no limit
-    if 'filter_has_properties' not in st.session_state:
-        st.session_state.filter_has_properties = False
-    if 'filter_property_name' not in st.session_state:
-        st.session_state.filter_property_name = ""
-    if 'filter_property_value' not in st.session_state:
-        st.session_state.filter_property_value = ""
+    st.session_state.setdefault('filter_date_start', None)
+    st.session_state.setdefault('filter_date_end', None)
+    st.session_state.setdefault('filter_min_size', 0)
+    st.session_state.setdefault('filter_max_size', 50 * 1024 * 1024)  # 50 MB
+    st.session_state.setdefault('filter_min_shapes', 0)
+    st.session_state.setdefault('filter_max_shapes', 500)
+    st.session_state.setdefault('filter_min_width', 0)
+    st.session_state.setdefault('filter_max_width', 0)  # 0 means no limit
+    st.session_state.setdefault('filter_min_height', 0)
+    st.session_state.setdefault('filter_max_height', 0)  # 0 means no limit
+    st.session_state.setdefault('filter_has_properties', False)
+    st.session_state.setdefault('filter_property_name', "")
+    st.session_state.setdefault('filter_property_value', "")
 
     # Health Monitor state
-    if 'health_scan_running' not in st.session_state:
-        st.session_state.health_scan_running = False
-    if 'health_data' not in st.session_state:
-        st.session_state.health_data = None
-    if 'health_scan_progress' not in st.session_state:
-        st.session_state.health_scan_progress = 0
+    st.session_state.setdefault('health_scan_running', False)
+    st.session_state.setdefault('health_data', None)
+    st.session_state.setdefault('health_scan_progress', 0)
 
     # Temp File Cleaner state
-    if 'temp_files' not in st.session_state:
-        st.session_state.temp_files = []
+    st.session_state.setdefault('temp_files', [])
 
     # Visio Control state
-    if 'visio_control_active_tab' not in st.session_state:
-        st.session_state.visio_control_active_tab = "Documents"
-    if 'visio_control_new_doc_name' not in st.session_state:
-        st.session_state.visio_control_new_doc_name = "New Document"
-    if 'new_page_name' not in st.session_state:
-        st.session_state.new_page_name = "New Page"
-    if 'selected_shape_id' not in st.session_state:
-        st.session_state.selected_shape_id = None
-    if 'shape_edit_text' not in st.session_state:
-        st.session_state.shape_edit_text = ""
-    if 'shape_edit_width' not in st.session_state:
-        st.session_state.shape_edit_width = 1.0
-    if 'shape_edit_height' not in st.session_state:
-        st.session_state.shape_edit_height = 1.0
-    if 'shape_edit_x' not in st.session_state:
-        st.session_state.shape_edit_x = 4.0
-    if 'shape_edit_y' not in st.session_state:
-        st.session_state.shape_edit_y = 4.0
-    if 'new_shape_type' not in st.session_state:
-        st.session_state.new_shape_type = "rectangle"
-    if 'new_shape_width' not in st.session_state:
-        st.session_state.new_shape_width = 1.0
-    if 'new_shape_height' not in st.session_state:
-        st.session_state.new_shape_height = 1.0
-    if 'new_shape_x' not in st.session_state:
-        st.session_state.new_shape_x = 4.0
-    if 'new_shape_y' not in st.session_state:
-        st.session_state.new_shape_y = 4.0
-    if 'selected_shapes_for_alignment' not in st.session_state:
-        st.session_state.selected_shapes_for_alignment = []
+    st.session_state.setdefault('visio_control_active_tab', "Documents")
+    st.session_state.setdefault('visio_control_new_doc_name', "New Document")
+    st.session_state.setdefault('new_page_name', "New Page")
+    st.session_state.setdefault('selected_shape_id', None)
+    st.session_state.setdefault('shape_edit_text', "")
+    st.session_state.setdefault('shape_edit_width', 1.0)
+    st.session_state.setdefault('shape_edit_height', 1.0)
+    st.session_state.setdefault('shape_edit_x', 4.0)
+    st.session_state.setdefault('shape_edit_y', 4.0)
+    st.session_state.setdefault('new_shape_type', "rectangle")
+    st.session_state.setdefault('new_shape_width', 1.0)
+    st.session_state.setdefault('new_shape_height', 1.0)
+    st.session_state.setdefault('new_shape_x', 4.0)
+    st.session_state.setdefault('new_shape_y', 4.0)
+    st.session_state.setdefault('selected_shapes_for_alignment', [])
     # Add state for batch selection in explorer
-    if 'selected_shapes_for_batch' not in st.session_state:
-        st.session_state.selected_shapes_for_batch = {} # Dict to store {unique_id: shape_data}
+    st.session_state.setdefault('selected_shapes_for_batch', {}) # Dict to store {unique_id: shape_data}
 
-# Initialize all session state variables
+# Always initialize session state before rendering any UI
 initialize_session_state()
 
 # Import the modularized main pages (moved to modules directory)
@@ -330,95 +144,152 @@ import modules.Temp_File_Cleaner as cleaner
 import modules.Stencil_Health as health
 import modules.Visio_Control as visiocontrol
 
-# --- Batch Action Callbacks ---
-def handle_batch_import():
-    if not visio.is_connected():
-        st.sidebar.error("Visio not connected.")
-        return
+# Create a global StencilDatabase instance for app lifetime
+_db_instance = None
 
-    selected_shapes = st.session_state.get('selected_shapes_for_batch', {})
-    if not selected_shapes:
-        st.sidebar.warning("No shapes selected for import.")
-        return
+def get_db_instance():
+    global _db_instance
+    if _db_instance is None:
+        try:
+            _db_instance = StencilDatabase()
+        except Exception as e:
+            st.error(f"Error initializing database: {str(e)}")
+            st.text(traceback.format_exc())
+            # Create a minimal fallback instance or return None
+            # This allows the app to continue even if the database is inaccessible
+            return None
+    return _db_instance
 
-    # Prepare shapes for import (only those from stencils)
-    shapes_to_import = []
-    for unique_id, shape_data in selected_shapes.items():
-        if not shape_data.get('is_document_shape'): # Only import shapes from stencils
-            shapes_to_import.append({
-                "path": shape_data.get('stencil_path'),
-                "name": shape_data.get('shape_name')
-            })
+def cleanup():
+    # Cleanup function to close DB connection and perform other cleanup tasks
+    global _db_instance
+    if _db_instance is not None:
+        try:
+            _db_instance.close()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
-    if not shapes_to_import:
-        st.sidebar.warning("No stencil shapes selected for import.")
-        return
+# Register cleanup to run on program exit
+atexit.register(cleanup)
 
-    doc_index = st.session_state.get('selected_doc_index', 1)
-    page_index = st.session_state.get('selected_page_index', 1)
+# Register signal handlers for graceful exit on SIGINT and SIGTERM
+def signal_handler(signum, frame):
+    print(f"Received signal {signum}, running cleanup...")
+    cleanup()
+    sys.exit(0)
 
-    with st.spinner(f"Importing {len(shapes_to_import)} shapes..."):
-        success_count, total_count = visio.import_multiple_shapes(shapes_to_import, doc_index, page_index)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
-    if success_count > 0:
-        st.sidebar.success(f"Imported {success_count}/{total_count} shapes.")
-        # Optionally clear selection after successful import
-        # st.session_state.selected_shapes_for_batch = {}
-    else:
-        st.sidebar.error(f"Failed to import shapes (Imported {success_count}/{total_count}).")
+# Import the modularized main pages (moved to modules directory)
+import modules.Visio_Stencil_Explorer as explorer
+import modules.Temp_File_Cleaner as cleaner
+import modules.Stencil_Health as health
+import modules.Visio_Control as visiocontrol
 
-def handle_batch_add_favorites():
-    selected_shapes = st.session_state.get('selected_shapes_for_batch', {})
-    if not selected_shapes:
-        st.sidebar.warning("No shapes selected to add to favorites.")
-        return
+# Create a global StencilDatabase instance for app lifetime
+_db_instance = None
 
-    db = StencilDatabase()
-    added_count = 0
-    error_count = 0
-    skipped_count = 0
+def get_db_instance():
+    global _db_instance
+    if _db_instance is None:
+        try:
+            _db_instance = StencilDatabase()
+        except Exception as e:
+            st.error(f"Error initializing database: {str(e)}")
+            st.text(traceback.format_exc())
+            # Create a minimal fallback instance or return None
+            # This allows the app to continue even if the database is inaccessible
+            return None
+    return _db_instance
 
-    with st.spinner(f"Adding {len(selected_shapes)} items to favorites..."):
-        for unique_id, shape_data in selected_shapes.items():
-            try:
-                if shape_data.get('is_document_shape'):
-                    # Add document shape by ID (if shape_id exists)
-                    shape_id = shape_data.get('shape_id')
-                    stencil_path_for_fav = shape_data.get('stencil_path') # This is the special visio_doc_... path
-                    # We need a real stencil path to link in favorites. This feature might not be fully compatible.
-                    # For now, we'll skip adding live document shapes to favorites directly via batch.
-                    # A better approach might be to favorite the *source* stencil/shape if identifiable.
-                    # logger.warning(f"Skipping favorite for document shape ID {shape_id} - feature needs refinement.")
-                    skipped_count += 1
-                    continue # Skip document shapes for now
-                else:
-                    # Add stencil shape by path and shape_id
-                    stencil_path = shape_data.get('stencil_path')
-                    shape_id = shape_data.get('shape_id') # Assumes shape_id is in the dict from db search
-                    if stencil_path and shape_id:
-                         fav_result = db.add_favorite_shape_by_id(stencil_path, shape_id)
-                         if fav_result: # Check if it returned a valid dict (meaning success or already existed)
-                             added_count += 1
-                         else: # Likely an error or shape not found
-                             error_count += 1
-                    else:
-                         skipped_count += 1 # Missing data to add favorite
-            except Exception as e:
-                # logger.error(f"Error adding favorite for {unique_id}: {e}")
-                error_count += 1
-    db.close()
+def cleanup():
+    # Cleanup function to close DB connection and perform other cleanup tasks
+    global _db_instance
+    if _db_instance is not None:
+        try:
+            _db_instance.close()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
-    if added_count > 0:
-        st.sidebar.success(f"Added {added_count} shapes to favorites.")
-    if error_count > 0:
-        st.sidebar.error(f"Failed to add {error_count} shapes to favorites.")
-    if skipped_count > 0:
-        st.sidebar.warning(f"Skipped {skipped_count} items (e.g., document shapes or missing data).)")
-    # Optionally clear selection
-    # st.session_state.selected_shapes_for_batch = {}
+# Register cleanup to run on program exit
+atexit.register(cleanup)
+
+# Register signal handlers for graceful exit on SIGINT and SIGTERM
+def signal_handler(signum, frame):
+    print(f"Received signal {signum}, running cleanup...")
+    cleanup()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # Render the shared sidebar once for the entire application
 selected_directory = render_shared_sidebar(key_prefix="main_")
+
+from app.core.visio import VisioIntegration
+import streamlit as st
+import traceback
+
+def handle_batch_import():
+    """Import the selected shapes from session state into Visio."""
+    visio_integration = VisioIntegration()
+    selected_shapes = st.session_state.get('selected_shapes_for_batch', {})
+    if not selected_shapes:
+        st.warning("No shapes selected for batch import.")
+        return
+    
+    # Prepare shapes list for import_multiple_shapes
+    shapes_to_import = []
+    for key, shape in selected_shapes.items():
+        # Expect shape dict to contain 'path' (stencil path) and 'name' (shape name)
+        path = shape.get('path') or shape.get('stencil_path')
+        name = shape.get('name') or shape.get('shape_name')
+        if path and name:
+            shapes_to_import.append({'path': path, 'name': name})
+        else:
+            st.error(f"Shape data missing path or name for key {key}. Skipping.")
+    
+    if not shapes_to_import:
+        st.error("No valid shapes found for import.")
+        return
+    
+    try:
+        # Use default document and page index from session state or fallback to 1
+        doc_index = st.session_state.get('selected_doc_index', 1)
+        page_index = st.session_state.get('selected_page_index', 1)
+        successful, total = visio_integration.import_multiple_shapes(shapes_to_import, doc_index, page_index)
+        st.success(f"Imported {successful} out of {total} shapes to Visio.")
+    except Exception as e:
+        st.error(f"Error during batch import: {str(e)}")
+        st.text(traceback.format_exc())
+
+def handle_batch_add_favorites():
+    """Add selected shapes for batch to the user's favorites collection in session state."""
+    selected_shapes = st.session_state.get('selected_shapes_for_batch', {})
+    if not selected_shapes:
+        st.warning("No shapes selected to add to favorites.")
+        return
+    
+    favorites = st.session_state.get('favorite_stencils', [])
+    # Use a set of unique ids or unique shape identifiers to avoid duplicates
+    existing_ids = set()
+    for fav in favorites:
+        # Assuming favorite shape dicts have a unique 'id' key or similar
+        if isinstance(fav, dict):
+            existing_ids.add(fav.get('id') or fav.get('unique_id'))
+    
+    added_count = 0
+    for key, shape in selected_shapes.items():
+        unique_id = shape.get('id') or shape.get('unique_id') or key
+        if unique_id not in existing_ids:
+            favorites.append(shape)
+            existing_ids.add(unique_id)
+            added_count += 1
+    
+    st.session_state['favorite_stencils'] = favorites
+    st.success(f"Added {added_count} new shape(s) to favorites.")
+
 
 # Add batch actions to the sidebar
 with st.sidebar:
