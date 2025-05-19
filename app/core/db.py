@@ -23,16 +23,19 @@ class StencilDatabase:
 
     def close(self):
         """Close the database connection safely."""
+        print("DEBUG: db.py - Attempting to acquire lock for close...")
         with self._lock:
+            print("DEBUG: db.py - Lock acquired for close.")
+            print("DEBUG: db.py - Before self._conn.close()")
             if self._conn:
                 try:
-                    print("Closing database connection...")
                     self._conn.close()
-                    print("Database connection closed.")
+                    print("DEBUG: db.py - After self._conn.close()")
                 except Exception as e:
                     print(f"Error closing database connection: {e}")
                 finally:
                     self._conn = None
+            print("DEBUG: db.py - Lock released after close.")
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get database connection (using check_same_thread=False with external lock)"""
@@ -50,7 +53,9 @@ class StencilDatabase:
 
     def _init_db(self):
         """Initialize database schema"""
+        print("DEBUG: db.py - About to acquire lock in _init_db for StencilDatabase")
         with self._lock:
+            print("DEBUG: db.py - Lock acquired in _init_db for StencilDatabase")
             conn = self._get_conn()
             if not self._check_integrity():
                 print("Integrity check failed, attempting recovery/recreation.")
@@ -59,6 +64,7 @@ class StencilDatabase:
 
             self._run_migrations(conn) # Apply schema changes if needed
             self._init_db_schema(conn) # Create tables if they don't exist
+        print("DEBUG: db.py - Lock released in _init_db for StencilDatabase")
 
     # Helper for schema creation, called by _init_db and _recreate_tables
     def _init_db_schema(self, conn):

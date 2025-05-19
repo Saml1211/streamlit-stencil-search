@@ -28,11 +28,18 @@ from app.core.components import directory_preset_manager, render_shared_sidebar
 from app.core.db import StencilDatabase
 from app.core.custom_styles import inject_custom_css
 from app.core.logging_utils import setup_logger, get_logger
-from app.core.preferences import UserPreferences
+from app.core.preferences import UserPreferences, _DEFAULTS
 
 # Create a user preferences instance (no longer cached as resource)
 def get_user_preferences():
-    return UserPreferences()
+    # MODIFIED START: Temporarily return a UserPreferences instance that only uses defaults
+    # and does not perform file I/O on init for testing purposes.
+    # The UserPreferences class needs to handle file_path=None gracefully,
+    # or this might need further adjustment in UserPreferences itself.
+    prefs_instance = UserPreferences(file_path=None)
+    prefs_instance._prefs = dict(_DEFAULTS) # Directly set to defaults, bypassing load
+    return prefs_instance
+    # MODIFIED END
 
 # Set up application logging (only once)
 app_logger = setup_logger(
@@ -165,50 +172,9 @@ def cleanup():
     global _db_instance
     if _db_instance is not None:
         try:
+            print("DEBUG: app.py - Before _db_instance.close()")
             _db_instance.close()
-        except Exception as e:
-            print(f"Error during cleanup: {e}")
-
-# Register cleanup to run on program exit
-atexit.register(cleanup)
-
-# Register signal handlers for graceful exit on SIGINT and SIGTERM
-def signal_handler(signum, frame):
-    print(f"Received signal {signum}, running cleanup...")
-    cleanup()
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
-# Import the modularized main pages (moved to modules directory)
-import modules.Visio_Stencil_Explorer as explorer
-import modules.Temp_File_Cleaner as cleaner
-import modules.Stencil_Health as health
-import modules.Visio_Control as visiocontrol
-
-# Create a global StencilDatabase instance for app lifetime
-_db_instance = None
-
-def get_db_instance():
-    global _db_instance
-    if _db_instance is None:
-        try:
-            _db_instance = StencilDatabase()
-        except Exception as e:
-            st.error(f"Error initializing database: {str(e)}")
-            st.text(traceback.format_exc())
-            # Create a minimal fallback instance or return None
-            # This allows the app to continue even if the database is inaccessible
-            return None
-    return _db_instance
-
-def cleanup():
-    # Cleanup function to close DB connection and perform other cleanup tasks
-    global _db_instance
-    if _db_instance is not None:
-        try:
-            _db_instance.close()
+            print("DEBUG: app.py - After _db_instance.close()")
         except Exception as e:
             print(f"Error during cleanup: {e}")
 
@@ -225,7 +191,9 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 # Render the shared sidebar once for the entire application
-selected_directory = render_shared_sidebar(key_prefix="main_")
+# selected_directory = render_shared_sidebar(key_prefix="main_") # Temporarily commented out
+selected_directory = "." # Provide a default hardcoded value
+st.sidebar.warning("Sidebar rendering is temporarily disabled for testing.") # Add a note
 
 from app.core.visio import VisioIntegration
 import streamlit as st
@@ -292,43 +260,43 @@ def handle_batch_add_favorites():
 
 
 # Add batch actions to the sidebar
-with st.sidebar:
-    with st.expander("Batch Actions", expanded=False):
-        st.markdown("Perform actions on all selected shapes")
-
-        # Display number of selected items
-        selected_count = len(st.session_state.get('selected_shapes_for_batch', {}))
-        if selected_count > 0:
-            st.caption(f"{selected_count} item(s) selected")
-        else:
-            st.caption("Select shapes in results to enable actions.")
-
-        # Disable buttons if nothing is selected
-        disable_buttons = selected_count == 0
-
-        st.button("Batch Import to Visio", key="batch_import_btn_main", on_click=handle_batch_import, disabled=disable_buttons)
-        st.button("Add Selected to Favorites", key="batch_favorites_btn_main", on_click=handle_batch_add_favorites, disabled=disable_buttons)
-        st.button("Remove Selected from Collection", key="batch_remove_btn_main", disabled=disable_buttons) # Add on_click later
-
-        # Placeholder for future tagging UI
-        st.text_input("Add Tags (comma-separated)", key="batch_add_tags_input_main", disabled=disable_buttons)
-        st.button("Assign Tags to Selected", key="batch_assign_tags_btn_main", disabled=disable_buttons) # Add on_click later
+# with st.sidebar: # Temporarily commented out
+#     with st.expander("Batch Actions", expanded=False):
+#         st.markdown("Perform actions on all selected shapes")
+# 
+#         # Display number of selected items
+#         selected_count = len(st.session_state.get('selected_shapes_for_batch', {}))
+#         if selected_count > 0:
+#             st.caption(f"{selected_count} item(s) selected")
+#         else:
+#             st.caption("Select shapes in results to enable actions.")
+# 
+#         # Disable buttons if nothing is selected
+#         disable_buttons = selected_count == 0
+# 
+#         st.button("Batch Import to Visio", key="batch_import_btn_main", on_click=handle_batch_import, disabled=disable_buttons)
+#         st.button("Add Selected to Favorites", key="batch_favorites_btn_main", on_click=handle_batch_add_favorites, disabled=disable_buttons)
+#         st.button("Remove Selected from Collection", key="batch_remove_btn_main", disabled=disable_buttons) # Add on_click later
+# 
+#         # Placeholder for future tagging UI
+#         st.text_input("Add Tags (comma-separated)", key="batch_add_tags_input_main", disabled=disable_buttons)
+#         st.button("Assign Tags to Selected", key="batch_assign_tags_btn_main", disabled=disable_buttons) # Add on_click later
 
 # Create tabbed main content
-tabs = st.tabs(["🔍 Visio Stencil Explorer", "🧹 Temp File Cleaner", "🧪 Stencil Health", "🎮 Visio Control"])
+tabs = st.tabs(["🔍 Visio Stencil Explorer", "🧹 Temp File Cleaner", "🧪 Stencil Health", "🎮 Visio Control"]) # Restored
 
 with tabs[0]:
     # Pass the selected directory to each module instead of having them render their own sidebar
-    explorer.main(selected_directory=selected_directory)
+    explorer.main(selected_directory=selected_directory) # Restored
 
 with tabs[1]:
-    cleaner.main(selected_directory=selected_directory)
+    cleaner.main(selected_directory=selected_directory) # Restored
 
 with tabs[2]:
-    health.main(selected_directory=selected_directory)
+    health.main(selected_directory=selected_directory) # Restored
 
 with tabs[3]:
-    visiocontrol.main(selected_directory=selected_directory)
+    visiocontrol.main(selected_directory=selected_directory) # Restored
 
 # Now that the page has run and set_page_config has been called,
 # we can add our own UI elements

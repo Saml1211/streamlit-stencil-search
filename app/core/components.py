@@ -221,7 +221,9 @@ def render_shared_sidebar(key_prefix="") -> str:
     with st.sidebar:
         # Directory preset manager
         st.markdown("<h3>Settings</h3>", unsafe_allow_html=True)
-        selected_directory = directory_preset_manager(key_prefix=key_prefix)
+        # selected_directory = directory_preset_manager(key_prefix=key_prefix) # Temporarily commented out
+        selected_directory = "." # Temporarily hardcoded for testing
+        st.sidebar.caption("Directory manager temporarily disabled for testing.") # Add a note
 
         # Add Visio integration section
         st.markdown("<h3>Visio Integration</h3>", unsafe_allow_html=True)
@@ -264,23 +266,23 @@ def render_shared_sidebar(key_prefix="") -> str:
         with visio_status_col2:
             refresh_btn = st.button("🔄", key=f"{key_prefix}refresh_visio_btn")
 
-        if refresh_btn or not st.session_state.get('visio_connected', False):
-            # Try to connect to Visio (local or remote)
+        # Temporarily disable automatic connection for testing
+        if refresh_btn: # Only attempt connection if refresh is explicitly clicked
             server_name = None
             if st.session_state.visio_connection_type == "remote" and st.session_state.visio_server_name:
                 server_name = st.session_state.visio_server_name
 
-            connected = visio.connect(server_name)
-            st.session_state.visio_connected = connected
+            # Only connect if refresh is clicked
+            st.session_state.visio_connected = visio.connect(server_name)
 
-            if connected:
+            if st.session_state.visio_connected:
                 st.session_state.visio_documents = visio.get_open_documents()
-
-                # Get default document and page if available
                 doc_index, page_index, found_valid = visio.get_default_document_page()
                 if found_valid:
                     st.session_state.selected_doc_index = doc_index
                     st.session_state.selected_page_index = page_index
+            # else: # Ensure documents list is empty if not connected
+            #    st.session_state.visio_documents = []
 
         with visio_status_col1:
             if st.session_state.get('visio_connected', False):
@@ -293,6 +295,7 @@ def render_shared_sidebar(key_prefix="") -> str:
                     st.warning(f"{connection_type} Visio{server_info}: No documents open")
             else:
                 st.error("Visio not connected")
+                st.caption("Click 🔄 to connect") # Added caption
 
         # Add a separator
         st.markdown("---")
